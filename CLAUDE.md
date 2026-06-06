@@ -66,6 +66,39 @@ only legitimate diffs are: (a) our output adds method JSDoc descriptions the
 POC didn't extract, and (b) our output correctly marks `@IsOptional() x?` props
 as non-required (the POC overcounts these).
 
+## Tests
+
+```sh
+yarn test           # vitest run
+yarn test:watch     # vitest
+yarn test -u        # update snapshot after intentional output changes
+```
+
+Layout:
+
+```
+tests/
+  fixtures/example-app/    # self-contained NestJS app; installed as a Yarn workspace
+    package.json           # depends on real @nestjs/common, class-validator, class-transformer
+    tsconfig.json
+    nestparser.config.ts   # exercises the envelope + @Public auth hooks
+    src/                   # 4 controllers (users, posts, auth, health), 2 entities, DTOs, enums
+  parser.test.ts           # library API + targeted invariants
+  cli.test.ts              # spawns `tsx src/cli.ts` and asserts equality with the library output
+  __snapshots__/
+    openapi.snap.json      # the full document — committed, reviewable as a JSON diff
+  .tmp/                    # CLI scratch output, gitignored
+```
+
+Rules to remember:
+
+- The fixture is a **real installed package** via `workspaces: ["tests/fixtures/*"]` — not a stub. `yarn install` at the repo root provisions its deps.
+- The fixture's tsconfig is **standalone** — it does not extend the package tsconfig.
+- The snapshot file lives under `.prettierignore` because byte-equality with `JSON.stringify(doc, null, 2)` must be preserved. Don't reformat it manually.
+- The CLI test compares its subprocess output to the **library output at runtime**, not the snapshot, to avoid an ordering race when both files run in parallel under vitest.
+- HTTP-method decorators are looked up by **identifier name** (`Post`, `Get`, ...). Aliased imports like `import { Post as HttpPost }` will not be detected — keep fixture entity names distinct from decorator names (`BlogPost`, not `Post`).
+- After intentional output changes: `yarn test -u`, then commit the snapshot diff alongside the code change so reviewers see both.
+
 ## Conventions
 
 - Engine modules stay generic. Anything MobilyFlow-specific lives in `examples/mobilyflow.config.ts`, not in `src/`.
@@ -78,7 +111,8 @@ as non-required (the POC overcounts these).
 
 ## Out of scope (for now)
 
-- Tests — no framework yet. Vitest will land alongside the first feature beyond the POC port.
+- Coverage reporting (`@vitest/coverage-v8`).
+- Per-builder unit tests beyond the targeted invariants in `parser.test.ts`.
 - `nestparser init` subcommand to scaffold a config.
 - A `serve` subcommand (was decided against for v0).
 - CI.

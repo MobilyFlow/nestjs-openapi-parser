@@ -18,6 +18,9 @@ yarn-error.log*
 # Build artifacts
 *.tsbuildinfo
 
+# Test scratch
+tests/.tmp/
+
 # Env
 .env
 .env.local
