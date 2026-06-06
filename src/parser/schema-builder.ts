@@ -1,0 +1,204 @@
+import { ClassDeclaration, Node, Type } from 'ts-morph';
+import type { OpenApiSchema } from '../types/openapi';
+import { AstIndex } from './ast-index';
+
+export interface SchemaMembers {
+  properties: Record<string, OpenApiSchema>;
+  required: string[];
+}
+
+/**
+ * Converts TypeScript classes (entities & DTOs) into OpenAPI `components.schemas`.
+ * Handles:
+ *  - required derived from `@IsOptional()` / `?` (configurable)
+ *  - `@Exclude()` properties omitted (configurable)
+ *  - union object types -> `oneOf`, string-literal unions -> enum
+ *  - `PartialType / PickType / OmitType / IntersectionType` heritage
+ */
+export class SchemaBuilder {
+  private readonly schemas: Record<string, OpenApiSchema> = {};
+  private readonly pending = new Set<string>();
+  private readonly done = new Set<string>();
+
+  constructor(private readonly index: AstIndex) {}
+
+  /** Queue every entity and DTO so the spec covers them even if no endpoint refers to them. */
+  seedAll(): void {
+    for (const clazz of [...this.index.getEntities(), ...this.index.getDtos()]) {
+      const name = clazz.getName();
+      if (name) this.pending.add(name);
+    }
+  }
+
+  /** Register a reference to a class schema and return the `$ref` fragment. */
+  registerRef(name: string): OpenApiSchema {
+    if (!this.index.hasClass(name)) return { type: 'object' };
+    if (!this.done.has(name)) this.pending.add(name);
+    return { $ref: `#/components/schemas/${name}` };
+  }
+
+  /** Process the queue until no schema remains to build. */
+  build(): void {
+    while (this.pending.size) {
+      const name = this.pending.values().next().value as string;
+      this.pending.delete(name);
+      if (this.done.has(name)) continue;
+      this.done.add(name);
+
+      const clazz = this.index.getClass(name);
+      if (!clazz) continue;
+
+      const members = this.buildMembers(clazz);
+      const schema: OpenApiSchema = { type: 'object', properties: members.properties };
+      if (members.required.length) schema.required = members.required;
+      const desc = clazz.getJsDocs()[0]?.getCommentText();
+      if (desc) schema.description = desc;
+      this.schemas[name] = schema;
+    }
+  }
+
+  getSchemas(): Record<string, OpenApiSchema> {
+    return this.schemas;
+  }
+
+  /** Public entry to map an arbitrary type to an OpenAPI schema fragment. */
+  typeToSchema(type: Type): OpenApiSchema {
+    return this.schemaForType(type);
+  }
+
+  /** Flatten a class's properties (own + inherited / mapped-type heritage). */
+  buildMembers(clazz: ClassDeclaration): SchemaMembers {
+    const base = clazz.getBaseClass();
+    let inherited: SchemaMembers = { properties: {}, required: [] };
+    if (base) {
+      inherited = this.buildMembers(base);
+    } else {
+      const ext = clazz.getExtends();
+      if (ext) inherited = this.resolveHeritage(ext.getExpression());
+    }
+    return this.mergeMembers(inherited, this.buildOwnMembers(clazz));
+  }
+
+  private buildOwnMembers(clazz: ClassDeclaration): SchemaMembers {
+    const properties: Record<string, OpenApiSchema> = {};
+    const required: string[] = [];
+    const excludeDecorator = this.index.excludeDecorator;
+
+    for (const prop of clazz.getInstanceProperties()) {
+      if (!Node.isPropertyDeclaration(prop)) continue;
+      if (prop.getDecorator(excludeDecorator)) continue;
+
+      const name = prop.getName();
+      const schema = this.schemaForType(prop.getType());
+      const desc = prop.getJsDocs()[0]?.getCommentText();
+      if (desc) schema.description = desc;
+
+      properties[name] = schema;
+      if (!this.index.isOptionalProperty(prop)) required.push(name);
+    }
+
+    return { properties, required };
+  }
+
+  /** Resolve `PartialType() / PickType() / OmitType() / IntersectionType()` heritage. */
+  private resolveHeritage(expr: Node): SchemaMembers {
+    if (Node.isIdentifier(expr)) {
+      const cls = this.index.getClass(expr.getText());
+      return cls ? this.buildMembers(cls) : { properties: {}, required: [] };
+    }
+
+    if (Node.isCallExpression(expr)) {
+      const fnName = expr.getExpression().getText();
+      const args = expr.getArguments();
+
+      if (fnName === 'IntersectionType') {
+        let merged: SchemaMembers = { properties: {}, required: [] };
+        for (const arg of args) merged = this.mergeMembers(merged, this.resolveHeritage(arg));
+        return merged;
+      }
+
+      const inner = args.length ? this.resolveHeritage(args[0]) : { properties: {}, required: [] };
+      if (fnName === 'PartialType') return { properties: inner.properties, required: [] };
+      if (fnName === 'PickType') return this.pick(inner, this.parseStringArray(args[1]));
+      if (fnName === 'OmitType') return this.omit(inner, this.parseStringArray(args[1]));
+      return inner;
+    }
+
+    return { properties: {}, required: [] };
+  }
+
+  private schemaForType(type: Type): OpenApiSchema {
+    if (type.isString()) return { type: 'string' };
+    if (type.isNumber()) return { type: 'number' };
+    if (type.isBoolean()) return { type: 'boolean' };
+
+    const symbolName = AstIndex.symbolName(type);
+    if (symbolName === 'Date') return { type: 'string', format: 'date-time' };
+
+    if (type.isArray()) {
+      const element = type.getArrayElementType();
+      return { type: 'array', items: element ? this.schemaForType(element) : {} };
+    }
+
+    if (symbolName && this.index.hasEnum(symbolName)) {
+      return { type: 'string', enum: this.index.getEnumValues(symbolName) };
+    }
+
+    if (type.isUnion()) {
+      const members = type.getUnionTypes().filter((t) => !t.isUndefined() && !t.isNull());
+      if (members.length === 1) return this.schemaForType(members[0]);
+      if (members.length && members.every((t) => t.isStringLiteral())) {
+        return { type: 'string', enum: members.map((t) => t.getLiteralValue() as string) };
+      }
+      const objectMembers = members.filter((t) => {
+        const n = AstIndex.symbolName(t);
+        return n && this.index.hasClass(n);
+      });
+      if (members.length > 0 && objectMembers.length === members.length) {
+        return { oneOf: members.map((t) => this.registerRef(AstIndex.symbolName(t)!)) };
+      }
+      return { type: 'object' };
+    }
+
+    if (symbolName && this.index.hasClass(symbolName)) {
+      return this.registerRef(symbolName);
+    }
+
+    return { type: 'object' };
+  }
+
+  private mergeMembers(a: SchemaMembers, b: SchemaMembers): SchemaMembers {
+    const properties = { ...a.properties, ...b.properties };
+    const required = [...new Set([...a.required, ...b.required])].filter((k) => k in properties);
+    return { properties, required };
+  }
+
+  private pick(members: SchemaMembers, keys: string[]): SchemaMembers {
+    const properties: Record<string, OpenApiSchema> = {};
+    for (const key of keys)
+      if (key in members.properties) properties[key] = members.properties[key];
+    return { properties, required: members.required.filter((k) => keys.includes(k)) };
+  }
+
+  private omit(members: SchemaMembers, keys: string[]): SchemaMembers {
+    const properties: Record<string, OpenApiSchema> = {};
+    for (const key of Object.keys(members.properties)) {
+      if (!keys.includes(key)) properties[key] = members.properties[key];
+    }
+    return { properties, required: members.required.filter((k) => !keys.includes(k)) };
+  }
+
+  private parseStringArray(arg?: Node): string[] {
+    if (!arg) return [];
+    let node: Node = arg;
+    if (Node.isAsExpression(node)) node = node.getExpression();
+    if (Node.isArrayLiteralExpression(node)) {
+      return node
+        .getElements()
+        .map((el) =>
+          Node.isStringLiteral(el) ? el.getLiteralValue() : el.getText().replace(/['"]/g, ''),
+        );
+    }
+    return [];
+  }
+}

@@ -2,52 +2,84 @@
 
 ## Goal
 
-A standalone CLI that consumes a NestJS project's TypeScript source code and emits an OpenAPI 3.x document. The parser is **purely static** — it uses [ts-morph](https://ts-morph.com/) to walk the AST. It does **not** import NestJS, instantiate the application, or rely on `reflect-metadata` at runtime.
+Standalone CLI that consumes a NestJS project's TypeScript source and emits an OpenAPI 3.x document by **pure static analysis** with [ts-morph](https://ts-morph.com/). No `@nestjs/*` runtime deps. No `reflect-metadata`. No app boot.
 
-Published as `nestjs-openapi-parser` on npm, invoked as `nestparser` (or via `npx nestparser`).
+Published as `nestjs-openapi-parser`. Invoked as `nestparser` (`bin` field).
 
 ## Tech stack
 
-- **Package manager**: Yarn Berry (v4) with `nodeLinker: node-modules` (see `.yarnrc.yml`).
+- **Package manager**: Yarn Berry v4, `nodeLinker: node-modules`.
 - **Language**: TypeScript, `target: ES2022`, `module: commonjs`.
 - **AST**: `ts-morph` — the only AST tool. Do not introduce `@nestjs/*` runtime deps or `reflect-metadata`.
 - **CLI**: `commander`.
-- **Dev runner**: `tsx` (no compile during dev).
+- **Config file loader**: handles `.ts/.mts/.cts/.mjs/.cjs/.js/.json` — `.ts*` files go through `tsx/cjs` (registered lazily).
+- **Dev runner**: `tsx`.
 - **Build**: `tsc` → `dist/`.
-- **Lint**: ESLint 9 flat config (`eslint.config.mjs`) + `typescript-eslint`.
-- **Format**: Prettier (single quotes, trailing commas, 100 cols).
+- **Lint**: ESLint 9 flat config + `typescript-eslint`.
+- **Format**: Prettier.
 
 ## Layout
 
 ```
 src/
-  index.ts         # CLI entrypoint — keeps the shebang #!/usr/bin/env node
+  cli.ts                # CLI entrypoint — keeps the shebang. bin field points here.
+  lib.ts                # Library entry — re-exports public API. main/types point here.
+  config/
+    types.ts            # NestParserConfig + hook contracts + defineConfig()
+    defaults.ts         # Default project/conventions config
+    loader.ts           # Cosmiconfig-style discovery + multi-format loading
+    index.ts
   parser/
-    index.ts       # parseNestProject(options) — main parsing entry
+    index.ts            # parseNestProject(options) — orchestrates the three builders
+    ast-index.ts        # Walk tsconfig project, index classes/enums/entities/DTOs/controllers
+    schema-builder.ts   # TS classes → components.schemas
+    path-builder.ts     # Controllers + HTTP decorators → paths, with hook injection
+  types/
+    openapi.ts          # OpenAPI document/schema types
+examples/
+  mobilyflow.config.ts  # Reference config reproducing the internal MobilyFlow POC
 ```
 
-`src/index.ts` MUST stay the file referenced by the `bin` field in `package.json`. The shebang is required for `npx nestparser` to work post-install — TypeScript preserves it through compilation.
+`src/cli.ts` MUST keep the `#!/usr/bin/env node` shebang — TypeScript preserves it through compilation, and `npx nestparser` depends on it.
 
 ## Common commands
 
 ```sh
-yarn dev --project ./fixture --out /tmp/openapi.json   # run via tsx, no compile
-yarn build                                              # tsc → dist/
-yarn start --help                                       # run compiled output
+yarn dev --project ./some/nest --out /tmp/openapi.json   # tsx, no compile
+yarn build                                               # tsc → dist/
+yarn start --help                                        # run compiled CLI
 yarn lint
 yarn format
 ```
 
+To verify against the in-house POC at `../mobilyflow-backend/docs/scripts`:
+
+```sh
+node dist/cli.js \
+  --project /Users/gtaja/Projects/MobilyFlow/mobilyflow-backend \
+  --out /tmp/nestparser-out.json \
+  --config ./examples/mobilyflow.config.ts
+```
+
+Then diff against `mobilyflow-backend/docs/openapi.json` (the POC's output). The
+only legitimate diffs are: (a) our output adds method JSDoc descriptions the
+POC didn't extract, and (b) our output correctly marks `@IsOptional() x?` props
+as non-required (the POC overcounts these).
+
 ## Conventions
 
-- One responsibility per file. The CLI layer (`src/index.ts`) only parses flags and delegates to `parser/`. No business logic in `index.ts`.
-- New parser features go under `src/parser/<feature>.ts` with focused, testable functions over methods on giant classes.
-- Read `package.json` at runtime via `fs.readFileSync` + `JSON.parse`, not via `import '../package.json'` — keeps `rootDir: src` clean.
-- Never commit `dist/` — it's gitignored and only produced by `yarn build` / `prepublishOnly`.
-- Always run `yarn lint` and `yarn format:check` before committing.
+- Engine modules stay generic. Anything MobilyFlow-specific lives in `examples/mobilyflow.config.ts`, not in `src/`.
+- Hooks are the only extensibility point. New project-specific behavior → new hook on `NestParserConfig['hooks']`, default no-op.
+- `defaultSchema` in hook contexts is a **getter** (`() => OpenApiSchema`) so optional schemas aren't registered as `$ref`s when the hook overrides them. Don't make it eager.
+- One responsibility per file. CLI layer (`cli.ts`) only parses flags + writes the file; never put business logic there.
+- Read `package.json` at runtime via `readFileSync` + `JSON.parse`, not via `import '../package.json'` — keeps `rootDir: src` clean.
+- Public API is whatever `src/lib.ts` re-exports. If it's not in `lib.ts`, it's internal.
+- Never commit `dist/` — gitignored, regenerated by `yarn build` / `prepublishOnly`.
 
 ## Out of scope (for now)
 
-- Tests — no test framework yet. Vitest will land alongside the first real parser slice.
-- CI — none yet.
-- Publishing — not published; do not run `yarn publish` until v0.1.0 is ready.
+- Tests — no framework yet. Vitest will land alongside the first feature beyond the POC port.
+- `nestparser init` subcommand to scaffold a config.
+- A `serve` subcommand (was decided against for v0).
+- CI.
+- Publishing — not published yet; do not run `yarn publish` until v0.1.0 is ready.

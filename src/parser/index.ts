@@ -1,8 +1,64 @@
+import type { NestParserConfig } from '../config/types';
+import type { OpenApiDocument } from '../types/openapi';
+import { AstIndex } from './ast-index';
+import { PathBuilder } from './path-builder';
+import { SchemaBuilder } from './schema-builder';
+
+export { AstIndex, PathBuilder, SchemaBuilder };
+
 export interface ParseNestProjectOptions {
-  projectPath: string;
-  outPath: string;
+  projectRoot: string;
+  config: NestParserConfig;
 }
 
-export async function parseNestProject(_options: ParseNestProjectOptions): Promise<void> {
-  throw new Error('parseNestProject is not implemented yet.');
+/**
+ * Build an OpenAPI 3.0.3 document from a NestJS project's TypeScript source.
+ * Pure static analysis — no app boot, no decorator reflection.
+ */
+export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocument {
+  const { projectRoot, config } = options;
+
+  const index = new AstIndex({
+    projectRoot,
+    project: config.project,
+    conventions: config.conventions,
+    hooks: { isDto: config.hooks?.isDto },
+  });
+
+  const schemaBuilder = new SchemaBuilder(index);
+  schemaBuilder.seedAll();
+
+  const registeredSchemes = Object.keys(config.openapi.securitySchemes ?? {});
+
+  const paths = new PathBuilder(index, schemaBuilder, {
+    globalPrefix: config.project?.globalPrefix,
+    hooks: config.hooks,
+    registeredSchemes,
+  }).build();
+
+  // Flush the schema worklist — paths may have registered extra refs.
+  schemaBuilder.build();
+
+  const document: OpenApiDocument = {
+    openapi: '3.0.3',
+    info: {
+      title: config.openapi.title,
+      version: config.openapi.version,
+      ...(config.openapi.description ? { description: config.openapi.description } : {}),
+      ...config.openapi.info,
+    },
+    paths,
+    components: {
+      schemas: schemaBuilder.getSchemas(),
+      ...(config.openapi.securitySchemes
+        ? { securitySchemes: config.openapi.securitySchemes }
+        : {}),
+    },
+  };
+
+  if (config.openapi.servers && config.openapi.servers.length > 0) {
+    document.servers = config.openapi.servers;
+  }
+
+  return document;
 }
