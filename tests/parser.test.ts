@@ -91,6 +91,17 @@ describe('parseNestProject (library API)', () => {
     expect(queryNames).toEqual(['authorId', 'limit', 'offset', 'status']);
   });
 
+  it('emits controller JSDoc as the matching tag description', async () => {
+    const document = await buildFixtureDocument();
+    const auth = document.tags?.find((t) => t.name === 'Auth');
+    expect(auth?.description).toBe('This controller manage auth');
+
+    // Controllers without JSDoc still appear as tags but carry no description.
+    const users = document.tags?.find((t) => t.name === 'Users');
+    expect(users).toBeDefined();
+    expect(users?.description).toBeUndefined();
+  });
+
   it('resolves UpdateUserDto via PartialType(CreateUserDto) with all fields optional', async () => {
     const document = await buildFixtureDocument();
     const update = document.components?.schemas?.UpdateUserDto as

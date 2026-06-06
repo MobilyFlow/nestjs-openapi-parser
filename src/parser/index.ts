@@ -30,11 +30,13 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
 
   const registeredSchemes = Object.keys(config.openapi.securitySchemes ?? {});
 
-  const paths = new PathBuilder(index, schemaBuilder, {
+  const pathBuilder = new PathBuilder(index, schemaBuilder, {
     globalPrefix: config.project?.globalPrefix,
     hooks: config.hooks,
     registeredSchemes,
-  }).build();
+  });
+  const paths = pathBuilder.build();
+  const tags = pathBuilder.getTags();
 
   // Flush the schema worklist — paths may have registered extra refs.
   schemaBuilder.build();
@@ -58,6 +60,10 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
 
   if (config.openapi.servers && config.openapi.servers.length > 0) {
     document.servers = config.openapi.servers;
+  }
+
+  if (tags.length > 0) {
+    document.tags = tags;
   }
 
   return document;

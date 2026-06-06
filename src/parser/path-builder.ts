@@ -33,6 +33,7 @@ export interface PathBuilderOptions {
 export class PathBuilder {
   private readonly paths: Record<string, Record<string, unknown>> = {};
   private readonly usedOperationIds = new Set<string>();
+  private readonly tags = new Map<string, string | undefined>();
   private readonly globalPrefix: string;
   private readonly hooks: NestParserHooks;
   private readonly registeredSchemes: string[];
@@ -54,10 +55,25 @@ export class PathBuilder {
     return this.paths;
   }
 
+  /**
+   * Tag entries derived from each controller — name from `@ApiTags(...)` or the
+   * default-tag hook, description from the controller class's JSDoc. First
+   * controller wins when multiple share a tag name.
+   */
+  getTags(): { name: string; description?: string }[] {
+    return [...this.tags.entries()].map(([name, description]) =>
+      description ? { name, description } : { name },
+    );
+  }
+
   private processController(controller: ClassDeclaration): void {
     const basePath = this.stringArg(controller.getDecorator('Controller'), 0) ?? '';
     const defaultTag = (this.hooks.controllerTag ?? this.defaultTag)(controller);
     const tag = this.stringArg(controller.getDecorator('ApiTags'), 0) ?? defaultTag;
+
+    if (!this.tags.has(tag)) {
+      this.tags.set(tag, controller.getJsDocs()[0]?.getCommentText());
+    }
 
     for (const method of controller.getInstanceMethods()) {
       const httpDecorator = method.getDecorators().find((d) => HTTP_METHODS[d.getName()]);
