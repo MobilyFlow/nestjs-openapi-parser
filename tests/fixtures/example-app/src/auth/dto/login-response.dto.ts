@@ -3,5 +3,8 @@ export class LoginResponseDto {
 
   expiresIn!: number;
 
+  /**
+   * The user ID
+   */
   userId!: string;
 }

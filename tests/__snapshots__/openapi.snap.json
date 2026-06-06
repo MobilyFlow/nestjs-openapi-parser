@@ -547,7 +547,8 @@
             "type": "number"
           },
           "userId": {
-            "type": "string"
+            "type": "string",
+            "description": "The user ID"
           }
         },
         "required": [
@@ -560,7 +561,8 @@
         "type": "object",
         "properties": {
           "email": {
-            "type": "string"
+            "type": "string",
+            "description": "The user email"
           },
           "password": {
             "type": "string"
@@ -786,6 +788,21 @@
   "servers": [
     {
       "url": "http://localhost:3000"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "This controller manage auth"
+    },
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Posts"
+    },
+    {
+      "name": "Users"
     }
   ]
 }
