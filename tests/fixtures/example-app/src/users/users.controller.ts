@@ -9,6 +9,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
+import { AdminMeta } from '../admin/admin-meta';
 import { PaginatedResponse } from '../common/paginated-response';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -48,5 +49,15 @@ export class UsersController {
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) _id: string): Promise<void> {
     return Promise.resolve();
+  }
+
+  /**
+   * Internal helper that returns an admin-only overlay.
+   *
+   * @Scope internal
+   */
+  @Get(':id/bridge')
+  bridgeAction(@Param('id', ParseUUIDPipe) _id: string): Promise<AdminMeta> {
+    return Promise.resolve(new AdminMeta());
   }
 }

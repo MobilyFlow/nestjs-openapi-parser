@@ -1,6 +1,11 @@
 import { ClassDeclaration, Node, Type } from 'ts-morph';
 import type { OpenApiSchema } from '../types/openapi';
 import { AstIndex } from './ast-index';
+import { getScopes, getTags, isVisible } from './tags';
+
+export interface SchemaBuilderOptions {
+  activeScopes?: Set<string>;
+}
 
 export interface SchemaMembers {
   properties: Record<string, OpenApiSchema>;
@@ -19,8 +24,14 @@ export class SchemaBuilder {
   private readonly schemas: Record<string, OpenApiSchema> = {};
   private readonly pending = new Set<string>();
   private readonly done = new Set<string>();
+  private readonly activeScopes: Set<string>;
 
-  constructor(private readonly index: AstIndex) {}
+  constructor(
+    private readonly index: AstIndex,
+    options: SchemaBuilderOptions = {},
+  ) {
+    this.activeScopes = options.activeScopes ?? new Set();
+  }
 
   /** Register a reference to a class schema and return the `$ref` fragment. */
   registerRef(name: string): OpenApiSchema {
@@ -39,6 +50,15 @@ export class SchemaBuilder {
 
       const clazz = this.index.getClass(name);
       if (!clazz) continue;
+
+      const classScopes = getScopes(getTags(clazz));
+      if (!isVisible(classScopes, this.activeScopes)) {
+        throw new Error(
+          `Scope conflict: class "${name}" is reached by the spec but has @Scope ${formatScopes(classScopes)} ` +
+            `which doesn't match the active scopes ${formatScopes(this.activeScopes)}. ` +
+            `Add a matching scope to --scope/config.scopes, or hide whatever referenced it.`,
+        );
+      }
 
       const members = this.buildMembers(clazz);
       const schema: OpenApiSchema = { type: 'object', properties: members.properties };
@@ -79,6 +99,7 @@ export class SchemaBuilder {
     for (const prop of clazz.getInstanceProperties()) {
       if (!Node.isPropertyDeclaration(prop)) continue;
       if (prop.getDecorator(excludeDecorator)) continue;
+      if (!isVisible(getScopes(getTags(prop)), this.activeScopes)) continue;
 
       const name = prop.getName();
       const schema = this.schemaForType(prop.getType());
@@ -193,4 +214,8 @@ export class SchemaBuilder {
     }
     return [];
   }
+}
+
+function formatScopes(scopes: Set<string>): string {
+  return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
 }

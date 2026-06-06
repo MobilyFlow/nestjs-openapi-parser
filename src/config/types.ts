@@ -132,6 +132,14 @@ export interface NestParserConfig {
    * walk as if an endpoint had returned the class).
    */
   additionalModels?: ModelConstructor[];
+  /**
+   * Active scopes for this build. Items annotated with `@Scope` are emitted
+   * only when their scope set intersects this list. Untagged items are always
+   * emitted. Empty/undefined means "only untagged items".
+   *
+   * The CLI flag `--scope a,b` overrides this when given.
+   */
+  scopes?: string[];
 }
 
 /** Helper for `nestparser.config.ts` so users get full type-checking. */

@@ -25,6 +25,7 @@ Options:
   -p, --project <path>    path to the NestJS project root (default: cwd)
   -o, --out <path>        path to the OpenAPI JSON output file (default: ./openapi.json)
   -c, --config <path>     path to the nestparser config file (default: auto-discover)
+  -s, --scope <list>      active scopes (comma-separated; repeatable)
   -h, --help              display help
 ```
 
@@ -69,6 +70,7 @@ export default defineConfig({
 | `conventions` | `excludeDecorator`  | `Exclude`                           | Property hidden from schema                           |
 | `conventions` | `optionalDecorator` | `IsOptional`                        | Property is optional                                  |
 | (top-level)   | `additionalModels`  | `[]`                                | Force-include classes the reachability walk misses    |
+| (top-level)   | `scopes`            | `[]`                                | Active scopes for `@Scope` filtering (see below)      |
 
 ### Schema reachability
 
@@ -91,6 +93,62 @@ export default defineConfig({
 ```
 
 Pass the **class itself**, not its name — the parser resolves it via `klass.name` against the AST. Transitive references of each entry come along automatically. Build throws if a name isn't found in the source tree, so typos and out-of-tree classes fail loud.
+
+### Scopes — generating documentation variants
+
+Tag controllers, methods, models, or fields with `@Scope` to make them appear in the spec only when the build is configured for a matching scope. Untagged items are always emitted.
+
+```ts
+/**
+ * Admin-only operations.
+ *
+ * @Scope admin
+ */
+@Controller('admin')
+export class AdminController {
+  /* ... */
+}
+
+export class User {
+  email!: string;
+
+  /** @Scope internal */
+  lastLoginIp?: string;
+
+  /** @Scope admin */
+  adminMeta?: AdminMeta;
+}
+```
+
+**Syntax.** The tag must be on its own JSDoc line (after the `* ` prefix). Inline mentions like `Comment with @Scope foo` are treated as description text. Multiple values can be comma-separated (`@Scope internal,admin`) or written on separate lines.
+
+**Activate scopes.** Either via the CLI or the config:
+
+```sh
+nestparser --scope internal,admin                # comma-separated
+nestparser --scope internal --scope admin        # repeatable
+```
+
+```ts
+defineConfig({
+  // ...
+  scopes: ['internal', 'admin'],
+});
+```
+
+The CLI flag overrides the config when present.
+
+**Visibility matrix:**
+
+| Item's `@Scope`   | Active scopes | Emitted?          |
+| ----------------- | ------------- | ----------------- |
+| _(none)_          | any           | ✅                |
+| `internal`        | _(none)_      | ❌                |
+| `internal`        | `internal`    | ✅                |
+| `internal`        | `admin`       | ❌                |
+| `internal, admin` | `admin`       | ✅ (intersection) |
+
+**Soundness — never dangling refs.** If a visible item references a class whose scope wouldn't be emitted, the build fails fast with a clear error naming the offending class. Example: a `@Scope internal` method returns `Promise<AdminMeta>` where `AdminMeta` is `@Scope admin`; building with `--scope internal` alone throws. Building with `--scope internal,admin` succeeds.
 
 ### Hooks (project-specific glue)
 

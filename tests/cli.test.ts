@@ -42,5 +42,39 @@ describe('nestparser CLI', () => {
     expect(result.stdout).toContain('--project');
     expect(result.stdout).toContain('--out');
     expect(result.stdout).toContain('--config');
+    expect(result.stdout).toContain('--scope');
+  });
+
+  it('--scope admin emits the AdminController and AdminMeta schema', () => {
+    mkdirSync(TMP, { recursive: true });
+    const out = path.join(TMP, 'cli-scope-admin.json');
+
+    const result = runCli(['--project', FIXTURE, '--out', out, '--scope', 'admin']);
+    expect(result.status, result.stderr).toBe(0);
+
+    const doc = JSON.parse(readFileSync(out, 'utf-8'));
+    expect(doc.paths['/api/admin/whoami']).toBeDefined();
+    expect(doc.components.schemas).toHaveProperty('AdminMeta');
+  });
+
+  it('--scope is repeatable: --scope internal --scope admin acts as the union', () => {
+    mkdirSync(TMP, { recursive: true });
+    const out = path.join(TMP, 'cli-scope-multi.json');
+
+    const result = runCli([
+      '--project',
+      FIXTURE,
+      '--out',
+      out,
+      '--scope',
+      'internal',
+      '--scope',
+      'admin',
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+
+    const doc = JSON.parse(readFileSync(out, 'utf-8'));
+    expect(doc.paths['/api/admin/whoami']).toBeDefined();
+    expect(doc.paths['/api/users/{id}/bridge']).toBeDefined();
   });
 });

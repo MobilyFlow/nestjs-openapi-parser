@@ -4,11 +4,13 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config/loader';
 import { parseNestProject } from './parser';
+import { parseScopeList } from './parser/tags';
 
 interface CliOptions {
   project: string;
   out: string;
   config?: string;
+  scope?: string[];
 }
 
 function readPackageVersion(): string {
@@ -26,10 +28,17 @@ async function run(options: CliOptions): Promise<void> {
     configPath: options.config,
   });
 
+  // CLI --scope overrides config.scopes when present (even empty).
+  const effectiveConfig =
+    options.scope !== undefined ? { ...config, scopes: parseScopeList(options.scope) } : config;
+
   console.log(`Project root: ${projectRoot}`);
   console.log(`Config file:  ${filePath}`);
+  if (effectiveConfig.scopes && effectiveConfig.scopes.length > 0) {
+    console.log(`Active scopes: ${effectiveConfig.scopes.join(', ')}`);
+  }
 
-  const document = parseNestProject({ projectRoot, config });
+  const document = parseNestProject({ projectRoot, config: effectiveConfig });
 
   mkdirSync(path.dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(document, null, 2));
@@ -61,6 +70,11 @@ program
   .option(
     '-c, --config <path>',
     'path to the nestparser config file (defaults to auto-discovery in the project root)',
+  )
+  .option(
+    '-s, --scope <list>',
+    'active scopes (comma-separated; repeatable). Items tagged with @Scope are emitted only when at least one matches; untagged items are always emitted.',
+    (value: string, prior: string[] = []) => [...prior, value],
   )
   .action(run);
 

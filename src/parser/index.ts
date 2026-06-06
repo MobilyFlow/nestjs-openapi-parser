@@ -3,6 +3,7 @@ import type { OpenApiDocument } from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { PathBuilder } from './path-builder';
 import { SchemaBuilder } from './schema-builder';
+import { getScopes, getTags, isVisible } from './tags';
 
 export { AstIndex, PathBuilder, SchemaBuilder };
 
@@ -25,14 +26,24 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
     hooks: { isDto: config.hooks?.isDto },
   });
 
-  const schemaBuilder = new SchemaBuilder(index);
+  const activeScopes = new Set(config.scopes ?? []);
+  const schemaBuilder = new SchemaBuilder(index, { activeScopes });
 
   for (const klass of config.additionalModels ?? []) {
     const name = klass.name;
-    if (!index.hasClass(name)) {
+    const astClass = index.getClass(name);
+    if (!astClass) {
       throw new Error(
         `additionalModels: class "${name}" was not found in the project source tree. ` +
           `Make sure it is defined in a .ts file under the configured rootDir.`,
+      );
+    }
+    const classScopes = getScopes(getTags(astClass));
+    if (!isVisible(classScopes, activeScopes)) {
+      throw new Error(
+        `additionalModels: class "${name}" has @Scope ${formatScopes(classScopes)} ` +
+          `which doesn't match the active scopes ${formatScopes(activeScopes)}. ` +
+          `Remove it from additionalModels or add a matching scope.`,
       );
     }
     schemaBuilder.registerRef(name);
@@ -44,6 +55,7 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
     globalPrefix: config.project?.globalPrefix,
     hooks: config.hooks,
     registeredSchemes,
+    activeScopes,
   });
   const paths = pathBuilder.build();
   const tags = pathBuilder.getTags();
@@ -77,4 +89,8 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
   }
 
   return document;
+}
+
+function formatScopes(scopes: Set<string>): string {
+  return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
 }

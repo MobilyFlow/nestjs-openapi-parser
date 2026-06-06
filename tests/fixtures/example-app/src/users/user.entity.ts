@@ -1,4 +1,5 @@
 import { Exclude } from 'class-transformer';
+import { AdminMeta } from '../admin/admin-meta';
 import { UserRole } from '../enums/user-role';
 
 /**
@@ -17,6 +18,20 @@ export class User {
 
   @Exclude()
   passwordHash!: string;
+
+  /**
+   * Last IP address used to sign in.
+   *
+   * @Scope internal
+   */
+  lastLoginIp?: string;
+
+  /**
+   * Admin-only overlay attached to the user.
+   *
+   * @Scope admin
+   */
+  adminMeta?: AdminMeta;
 
   createdAt!: Date;
 

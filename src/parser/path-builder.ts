@@ -10,6 +10,7 @@ import type { NestParserHooks } from '../config/types';
 import type { OpenApiSchema, OpenApiSecurityRequirement } from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { SchemaBuilder } from './schema-builder';
+import { getScopes, getTags, isVisible } from './tags';
 
 const HTTP_METHODS: Record<string, string> = {
   Get: 'get',
@@ -23,6 +24,7 @@ export interface PathBuilderOptions {
   globalPrefix?: string;
   hooks?: NestParserHooks;
   registeredSchemes?: string[];
+  activeScopes?: Set<string>;
 }
 
 /**
@@ -37,6 +39,7 @@ export class PathBuilder {
   private readonly globalPrefix: string;
   private readonly hooks: NestParserHooks;
   private readonly registeredSchemes: string[];
+  private readonly activeScopes: Set<string>;
 
   constructor(
     private readonly index: AstIndex,
@@ -46,6 +49,7 @@ export class PathBuilder {
     this.globalPrefix = options.globalPrefix ?? '';
     this.hooks = options.hooks ?? {};
     this.registeredSchemes = options.registeredSchemes ?? [];
+    this.activeScopes = options.activeScopes ?? new Set();
   }
 
   build(): Record<string, Record<string, unknown>> {
@@ -67,6 +71,8 @@ export class PathBuilder {
   }
 
   private processController(controller: ClassDeclaration): void {
+    if (!isVisible(getScopes(getTags(controller)), this.activeScopes)) return;
+
     const basePath = this.stringArg(controller.getDecorator('Controller'), 0) ?? '';
     const defaultTag = (this.hooks.controllerTag ?? this.defaultTag)(controller);
     const tag = this.stringArg(controller.getDecorator('ApiTags'), 0) ?? defaultTag;
@@ -76,6 +82,8 @@ export class PathBuilder {
     }
 
     for (const method of controller.getInstanceMethods()) {
+      if (!isVisible(getScopes(getTags(method)), this.activeScopes)) continue;
+
       const httpDecorator = method.getDecorators().find((d) => HTTP_METHODS[d.getName()]);
       if (!httpDecorator) continue;
 
