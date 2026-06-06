@@ -150,6 +150,29 @@ The CLI flag overrides the config when present.
 
 **Soundness — never dangling refs.** If a visible item references a class whose scope wouldn't be emitted, the build fails fast with a clear error naming the offending class. Example: a `@Scope internal` method returns `Promise<AdminMeta>` where `AdminMeta` is `@Scope admin`; building with `--scope internal` alone throws. Building with `--scope internal,admin` succeeds.
 
+#### Scoped description fragments
+
+Inside any JSDoc body (controller, method, model, field), you can mark text fragments that only appear under specific scopes:
+
+```ts
+/**
+ * Generic description that always appears.
+ *
+ * <internal>
+ * Extra context that only shows when scope=internal is active.
+ * </internal>
+ *
+ * <admin>Inline fragments work too.</admin>
+ */
+```
+
+- The item itself does **not** need a `@Scope` — fragments are independent of item visibility.
+- Multiple fragments can appear in the same JSDoc; **nesting is not allowed**.
+- Visibility follows the same rule as item-level `@Scope`: untagged text always appears; `<X>…</X>` appears only when `X` is in the active scopes; no active scope → all fragments are dropped.
+- Syntax errors (nesting, mismatched close, unclosed open) **throw** with the path of the offending item.
+
+Known limitation: fenced code blocks inside JSDoc are not protected. Avoid HTML-like `<X>…</X>` content inside ` ``` ` blocks if `X` could be confused for a scope name.
+
 ### Hooks (project-specific glue)
 
 Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Three hooks let you customize:

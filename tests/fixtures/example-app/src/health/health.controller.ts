@@ -10,6 +10,11 @@ export class HealthStatusDto {
 @Public()
 @Controller('health')
 export class HealthController {
+  /**
+   * Liveness probe.
+   *
+   * <internal>Internal note: returns the in-memory uptime, not the process clock.</internal>
+   */
   @Get()
   check(): HealthStatusDto {
     return { ok: true, uptimeSeconds: 0 };

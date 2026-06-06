@@ -1,7 +1,7 @@
 import { ClassDeclaration, Node, Type } from 'ts-morph';
 import type { OpenApiSchema } from '../types/openapi';
 import { AstIndex } from './ast-index';
-import { getScopes, getTags, isVisible } from './tags';
+import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
 
 export interface SchemaBuilderOptions {
   activeScopes?: Set<string>;
@@ -63,7 +63,10 @@ export class SchemaBuilder {
       const members = this.buildMembers(clazz);
       const schema: OpenApiSchema = { type: 'object', properties: members.properties };
       if (members.required.length) schema.required = members.required;
-      const desc = clazz.getJsDocs()[0]?.getCommentText();
+      const rawDesc = clazz.getJsDocs()[0]?.getCommentText();
+      const desc = rawDesc
+        ? filterScopedComments(rawDesc, this.activeScopes, { itemPath: name })
+        : undefined;
       if (desc) schema.description = desc;
       this.schemas[name] = schema;
     }
@@ -103,7 +106,12 @@ export class SchemaBuilder {
 
       const name = prop.getName();
       const schema = this.schemaForType(prop.getType());
-      const desc = prop.getJsDocs()[0]?.getCommentText();
+      const rawDesc = prop.getJsDocs()[0]?.getCommentText();
+      const desc = rawDesc
+        ? filterScopedComments(rawDesc, this.activeScopes, {
+            itemPath: `${clazz.getName() ?? '<anon>'}.${name}`,
+          })
+        : undefined;
       if (desc) schema.description = desc;
 
       properties[name] = schema;

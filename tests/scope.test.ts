@@ -1,6 +1,13 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { getScopes, getTags, loadConfig, parseNestProject, parseScopeList } from '../src/lib';
+import {
+  filterScopedComments,
+  getScopes,
+  getTags,
+  loadConfig,
+  parseNestProject,
+  parseScopeList,
+} from '../src/lib';
 import type { ModelConstructor, NestParserConfig } from '../src/lib';
 import { AstIndex } from '../src/parser/ast-index';
 import type { OpenApiDocument } from '../src/types/openapi';
@@ -96,6 +103,134 @@ describe('tag parsing helpers', () => {
     expect(parseScopeList(['internal,admin', 'public'])).toEqual(['internal', 'admin', 'public']);
     expect(parseScopeList(['internal, admin'])).toEqual(['internal', 'admin']);
     expect(parseScopeList('')).toEqual([]);
+  });
+
+  describe('filterScopedComments', () => {
+    it('keeps a multi-line fragment when its scope is active', () => {
+      const text = ['Lead.', '', '<internal>', 'kept', '</internal>'].join('\n');
+      expect(filterScopedComments(text, new Set(['internal']))).toBe('Lead.\n\nkept');
+    });
+
+    it('drops a multi-line fragment when no scope is active', () => {
+      const text = ['Lead.', '', '<internal>', 'gone', '</internal>'].join('\n');
+      expect(filterScopedComments(text, new Set())).toBe('Lead.');
+    });
+
+    it('keeps matching siblings, drops non-matching ones', () => {
+      const text = [
+        'Top.',
+        '',
+        '<internal>internal-line</internal>',
+        '',
+        '<admin>admin-line</admin>',
+      ].join('\n');
+      expect(filterScopedComments(text, new Set(['internal']))).toBe('Top.\n\ninternal-line');
+      expect(filterScopedComments(text, new Set(['admin']))).toBe('Top.\n\nadmin-line');
+      expect(filterScopedComments(text, new Set(['internal', 'admin']))).toBe(
+        'Top.\n\ninternal-line\n\nadmin-line',
+      );
+    });
+
+    it('supports inline fragments mid-paragraph', () => {
+      const text = 'Foo <admin>(admin: extra)</admin> bar.';
+      expect(filterScopedComments(text, new Set(['admin']))).toBe('Foo (admin: extra) bar.');
+      expect(filterScopedComments(text, new Set())).toBe('Foo  bar.');
+    });
+
+    it('passes plain text through unchanged', () => {
+      const text = 'Just a regular description.';
+      expect(filterScopedComments(text, new Set())).toBe(text);
+      expect(filterScopedComments(text, new Set(['anything']))).toBe(text);
+    });
+
+    it('collapses 3+ blank lines and trims ends', () => {
+      const text = '\n\n\n\nLead.\n\n\n\n<internal>x</internal>\n\n\n\n';
+      expect(filterScopedComments(text, new Set(['internal']))).toBe('Lead.\n\nx');
+    });
+
+    it('returns empty string when everything is filtered out', () => {
+      const text = '<internal>only-internal</internal>';
+      expect(filterScopedComments(text, new Set())).toBe('');
+    });
+
+    it('throws on nested fragments (same name)', () => {
+      const text = '<a>x<a>y</a>z</a>';
+      expect(() => filterScopedComments(text, new Set())).toThrow(/nested/i);
+    });
+
+    it('throws on nested fragments (different name)', () => {
+      const text = '<a>x<b>y</b>z</a>';
+      expect(() => filterScopedComments(text, new Set())).toThrow(/nested/i);
+    });
+
+    it('throws on a mismatched closing tag', () => {
+      const text = '<a>x</b>';
+      expect(() => filterScopedComments(text, new Set())).toThrow(/mismatched/i);
+    });
+
+    it('throws on an unclosed opening tag', () => {
+      const text = '<a>missing close';
+      expect(() => filterScopedComments(text, new Set())).toThrow(/unclosed/i);
+    });
+
+    it('throws on an unmatched closing tag (no open)', () => {
+      const text = 'x</a> y';
+      expect(() => filterScopedComments(text, new Set())).toThrow(/unmatched/i);
+    });
+
+    it('includes the itemPath in error messages', () => {
+      expect(() => filterScopedComments('<a>oops', new Set(), { itemPath: 'User.email' })).toThrow(
+        /User\.email/,
+      );
+    });
+  });
+
+  describe('scoped descriptions in the fixture', () => {
+    it('drops all fragments when no scope is active', async () => {
+      const { config } = await loadConfig({ projectRoot: FIXTURE });
+      const doc = parseNestProject({ projectRoot: FIXTURE, config });
+      const user = doc.components?.schemas?.User as {
+        description: string;
+        properties: { email: { description: string } };
+      };
+      expect(user.description).toBe('A registered user.');
+      expect(user.properties.email.description).toBe("The user's contact email.");
+      const health = doc.paths['/api/health'].get as { description: string };
+      expect(health.description).toBe('Liveness probe.');
+    });
+
+    it("appends internal paragraphs when scopes: ['internal']", async () => {
+      const { config } = await loadConfig({ projectRoot: FIXTURE });
+      const doc = parseNestProject({
+        projectRoot: FIXTURE,
+        config: { ...config, scopes: ['internal', 'admin'] },
+      });
+      const user = doc.components?.schemas?.User as {
+        description: string;
+        properties: { email: { description: string } };
+      };
+      expect(user.description).toContain('A registered user.');
+      expect(user.description).toContain('Internal: lookup is by `id`');
+      expect(user.description).toContain('Admin: rows with `role=ADMIN`');
+      expect(user.properties.email.description).toContain('OTP delivery target');
+      const health = doc.paths['/api/health'].get as { description: string };
+      expect(health.description).toContain('in-memory uptime');
+    });
+
+    it("includes only admin-tagged fragments when scopes: ['admin']", async () => {
+      const { config } = await loadConfig({ projectRoot: FIXTURE });
+      const doc = parseNestProject({
+        projectRoot: FIXTURE,
+        config: { ...config, scopes: ['admin'] },
+      });
+      const user = doc.components?.schemas?.User as {
+        description: string;
+        properties: { email: { description: string } };
+      };
+      expect(user.description).toContain('Admin: rows with `role=ADMIN`');
+      expect(user.description).not.toContain('lookup is by `id`');
+      expect(user.properties.email.description).toBe("The user's contact email.");
+    });
   });
 
   it('only treats line-start @Scope as a tag (inline mentions are description)', () => {

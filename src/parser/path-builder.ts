@@ -10,7 +10,7 @@ import type { NestParserHooks } from '../config/types';
 import type { OpenApiSchema, OpenApiSecurityRequirement } from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { SchemaBuilder } from './schema-builder';
-import { getScopes, getTags, isVisible } from './tags';
+import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
 
 const HTTP_METHODS: Record<string, string> = {
   Get: 'get',
@@ -78,7 +78,13 @@ export class PathBuilder {
     const tag = this.stringArg(controller.getDecorator('ApiTags'), 0) ?? defaultTag;
 
     if (!this.tags.has(tag)) {
-      this.tags.set(tag, controller.getJsDocs()[0]?.getCommentText());
+      const rawDesc = controller.getJsDocs()[0]?.getCommentText();
+      const desc = rawDesc
+        ? filterScopedComments(rawDesc, this.activeScopes, {
+            itemPath: `${controller.getName() ?? '<anon>'} (tag)`,
+          })
+        : undefined;
+      this.tags.set(tag, desc || undefined);
     }
 
     for (const method of controller.getInstanceMethods()) {
@@ -110,7 +116,12 @@ export class PathBuilder {
       tags: [tag],
     };
 
-    const desc = method.getJsDocs()[0]?.getCommentText();
+    const rawDesc = method.getJsDocs()[0]?.getCommentText();
+    const desc = rawDesc
+      ? filterScopedComments(rawDesc, this.activeScopes, {
+          itemPath: `${controller.getName() ?? '<anon>'}.${method.getName()}`,
+        })
+      : undefined;
     if (desc) operation.description = desc;
 
     const parameters: Record<string, unknown>[] = [];

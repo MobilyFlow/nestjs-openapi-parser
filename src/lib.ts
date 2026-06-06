@@ -17,7 +17,7 @@ export type {
 export { loadConfig } from './config/loader';
 export type { LoadConfigOptions, LoadedConfig } from './config/loader';
 
-export { getTags, getScopes, isVisible, parseScopeList } from './parser/tags';
+export { filterScopedComments, getScopes, getTags, isVisible, parseScopeList } from './parser/tags';
 export type { TagBag } from './parser/tags';
 
 export type {

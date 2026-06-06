@@ -60,6 +60,7 @@
         "tags": [
           "Health"
         ],
+        "description": "Liveness probe.",
         "responses": {
           "200": {
             "description": "Successful response",
@@ -667,7 +668,8 @@
             "type": "string"
           },
           "email": {
-            "type": "string"
+            "type": "string",
+            "description": "The user's contact email."
           },
           "name": {
             "type": "string"
