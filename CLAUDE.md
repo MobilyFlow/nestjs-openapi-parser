@@ -94,7 +94,9 @@ Rules to remember:
 
 - The fixture is a **real installed package** via `workspaces: ["tests/fixtures/*"]` — not a stub. `yarn install` at the repo root provisions its deps.
 - The fixture's tsconfig is **standalone** — it does not extend the package tsconfig.
-- The snapshot file lives under `.prettierignore` because byte-equality with `JSON.stringify(doc, null, 2)` must be preserved. Don't reformat it manually.
+- The snapshot file(s) live under `.prettierignore` because byte-equality with `JSON.stringify(doc, null, 2)` must be preserved. Don't reformat them manually.
+- One snapshot is committed per scope variant (`openapi.snap.json`, `openapi.admin.snap.json`, `openapi.internal-admin.snap.json`). They're driven by `SNAPSHOT_VARIANTS` in `tests/parser.test.ts`; add another entry to add a flavor.
+- `yarn snapshot:serve [file]` (the `scripts/serve-snapshot.ts` script) opens any of them under a Scalar UI. With no argument it lists the available snapshots interactively via `prompts`. An explicit argument can be a basename inside `tests/__snapshots__/` or any absolute path.
 - The CLI test compares its subprocess output to the **library output at runtime**, not the snapshot, to avoid an ordering race when both files run in parallel under vitest.
 - HTTP-method decorators are looked up by **identifier name** (`Post`, `Get`, ...). Aliased imports like `import { Post as HttpPost }` will not be detected — keep fixture entity names distinct from decorator names (`BlogPost`, not `Post`).
 - After intentional output changes: `yarn test -u`, then commit the snapshot diff alongside the code change so reviewers see both.

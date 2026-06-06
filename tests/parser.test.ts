@@ -23,12 +23,26 @@ async function buildFixtureDocument(
 class AuditEvent {}
 class ListPostsQueryDto {}
 
+// One snapshot file per scope variant — proves the spec stays stable across
+// every documentation flavor we ship from the same source.
+const SNAPSHOT_VARIANTS: { label: string; scopes?: string[]; file: string }[] = [
+  { label: 'no-scope', file: 'openapi.snap.json' },
+  { label: 'admin', scopes: ['admin'], file: 'openapi.admin.snap.json' },
+  {
+    label: 'internal+admin',
+    scopes: ['internal', 'admin'],
+    file: 'openapi.internal-admin.snap.json',
+  },
+];
+
 describe('parseNestProject (library API)', () => {
-  it('builds the expected OpenAPI document for the example app', async () => {
-    const document = await buildFixtureDocument();
-    await expect(JSON.stringify(document, null, 2) + '\n').toMatchFileSnapshot(
-      './__snapshots__/openapi.snap.json',
-    );
+  describe.each(SNAPSHOT_VARIANTS)('snapshot variant: $label', ({ scopes, file }) => {
+    it(`matches __snapshots__/${file}`, async () => {
+      const document = await buildFixtureDocument(scopes ? { scopes } : {});
+      await expect(JSON.stringify(document, null, 2) + '\n').toMatchFileSnapshot(
+        `./__snapshots__/${file}`,
+      );
+    });
   });
 
   it('strips @Exclude properties from emitted schemas', async () => {

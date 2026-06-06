@@ -202,6 +202,20 @@ yarn dev --help         # tsx, no compile
 yarn build              # tsc → dist/
 yarn lint
 yarn format
+yarn test               # vitest run
+yarn test:watch         # vitest watch mode
+yarn test -u            # refresh snapshots after intentional changes
+```
+
+### Browsing snapshots
+
+The test suite snapshots one OpenAPI document per scope variant (`openapi.snap.json`, `openapi.admin.snap.json`, `openapi.internal-admin.snap.json`). To view any of them in a Scalar UI:
+
+```sh
+yarn snapshot:serve                            # interactive picker (uses prompts)
+yarn snapshot:serve openapi.admin.snap.json    # basename relative to tests/__snapshots__/
+yarn snapshot:serve /tmp/some-spec.json        # any absolute path
+SCALAR_PORT=9000 yarn snapshot:serve           # override the default port (8088)
 ```
 
 ## License
