@@ -34,6 +34,7 @@ src/
     ast-index.ts        # Walk tsconfig project, index classes/enums/entities/DTOs/controllers
     schema-builder.ts   # TS classes → components.schemas
     path-builder.ts     # Controllers + HTTP decorators → paths, with hook injection
+    tags.ts             # JSDoc tag extraction + @Scope filtering + <scope>…</scope> fragments
   types/
     openapi.ts          # OpenAPI document/schema types
 examples/
@@ -82,8 +83,10 @@ tests/
     package.json           # depends on real @nestjs/common, class-validator, class-transformer
     tsconfig.json
     nestparser.config.ts   # exercises the envelope + @Public auth hooks
-    src/                   # 4 controllers (users, posts, auth, health), 2 entities, DTOs, enums
-  parser.test.ts           # library API + targeted invariants
+    src/                   # 5 controllers (users, posts, auth, health, admin), entities,
+                           # DTOs, enums, plus admin/admin-meta.ts for @Scope coverage
+  parser.test.ts           # library API + targeted invariants + snapshot variants
+  scope.test.ts            # @Scope filtering + <scope>…</scope> fragment unit + integration
   cli.test.ts              # spawns `tsx src/cli.ts` and asserts equality with the library output
   __snapshots__/
     openapi.snap.json      # the full document — committed, reviewable as a JSON diff
