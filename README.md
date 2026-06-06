@@ -437,7 +437,7 @@ Override the default conventions:
 - `isDto` — default matches `*.dto.ts` filename **or** class name ending in `DTO`/`Dto`.
 - `controllerTag` — default strips `Controller` suffix from the class name.
 
-A reference config that reproduces the MobilyFlow internal POC (envelope + `PaginatedResponse` + `AuthParams`) lives at [`examples/mobilyflow.config.ts`](examples/mobilyflow.config.ts).
+The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup with both hooks (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).
 
 ## Programmatic API
 

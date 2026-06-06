@@ -37,8 +37,6 @@ src/
     tags.ts             # JSDoc tag extraction + @Scope filtering + <scope>…</scope> fragments
   types/
     openapi.ts          # OpenAPI document/schema types
-examples/
-  mobilyflow.config.ts  # Reference config reproducing the internal MobilyFlow POC
 ```
 
 `src/cli.ts` MUST keep the `#!/usr/bin/env node` shebang — TypeScript preserves it through compilation, and `npx nestparser` depends on it.
@@ -53,19 +51,15 @@ yarn lint
 yarn format
 ```
 
-To verify against the in-house POC at `../mobilyflow-backend/docs/scripts`:
+To smoke-test the CLI against a real NestJS codebase:
 
 ```sh
 node dist/cli.js \
-  --project /Users/gtaja/Projects/MobilyFlow/mobilyflow-backend \
-  --out /tmp/nestparser-out.json \
-  --config ./examples/mobilyflow.config.ts
+  --project /path/to/some/nest/project \
+  --out /tmp/nestparser-out.json
 ```
 
-Then diff against `mobilyflow-backend/docs/openapi.json` (the POC's output). The
-only legitimate diffs are: (a) our output adds method JSDoc descriptions the
-POC didn't extract, and (b) our output correctly marks `@IsOptional() x?` props
-as non-required (the POC overcounts these).
+Open the result in a Scalar UI via `yarn snapshot:serve /tmp/nestparser-out.json`.
 
 ## Tests
 
@@ -106,7 +100,7 @@ Rules to remember:
 
 ## Conventions
 
-- Engine modules stay generic. Anything MobilyFlow-specific lives in `examples/mobilyflow.config.ts`, not in `src/`.
+- Engine modules stay generic. Project-specific behavior belongs in user configs (`nestparser.config.ts`) via the hook surface, not in `src/`. The test fixture at `tests/fixtures/example-app/nestparser.config.ts` is the in-tree reference.
 - Hooks are the only extensibility point. New project-specific behavior → new hook on `NestParserConfig['hooks']`, default no-op.
 - `defaultSchema` in hook contexts is a **getter** (`() => OpenApiSchema`) so optional schemas aren't registered as `$ref`s when the hook overrides them. Don't make it eager.
 - Schema emission is **reachable-only** — only classes reached from endpoints (return types, `@Body()`, nested properties, transitive) end up in `components.schemas`. `seedAll()`-style preemptive seeding does NOT exist. Orphan classes are added via `config.additionalModels: [ClassRef, ...]` — passed as constructors, resolved by `klass.name` against the AST index, throws on miss.
