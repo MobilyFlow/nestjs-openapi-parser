@@ -11,6 +11,7 @@ export type {
   ConventionsConfig,
   ResponseSchemaContext,
   SecurityContext,
+  ModelConstructor,
 } from './config/types';
 
 export { loadConfig } from './config/loader';

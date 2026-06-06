@@ -68,6 +68,29 @@ export default defineConfig({
 | `conventions` | `entityDecorator`   | `Entity` (TypeORM)                  | Decorator marking persisted entities                  |
 | `conventions` | `excludeDecorator`  | `Exclude`                           | Property hidden from schema                           |
 | `conventions` | `optionalDecorator` | `IsOptional`                        | Property is optional                                  |
+| (top-level)   | `additionalModels`  | `[]`                                | Force-include classes the reachability walk misses    |
+
+### Schema reachability
+
+Only classes that are **reachable from an endpoint** end up in `components.schemas`:
+
+- Controller method return types (after `Promise<T>` unwrap) and their nested class properties — transitively.
+- `@Body()` parameter types and their nested classes.
+- DTOs used as `@Query()` are inlined as individual query parameters, not emitted as named schemas — pass them via `additionalModels` if you want both.
+
+Classes that never reach the reference walk (orphan entities, error envelopes only used in interceptors, discriminated-union variants) won't appear in the spec by default. Add them explicitly:
+
+```ts
+import { CommonError } from './src/common/common-error';
+import { AuditEvent } from './src/audit/audit-event';
+
+export default defineConfig({
+  // ...
+  additionalModels: [CommonError, AuditEvent],
+});
+```
+
+Pass the **class itself**, not its name — the parser resolves it via `klass.name` against the AST. Transitive references of each entry come along automatically. Build throws if a name isn't found in the source tree, so typos and out-of-tree classes fail loud.
 
 ### Hooks (project-specific glue)
 

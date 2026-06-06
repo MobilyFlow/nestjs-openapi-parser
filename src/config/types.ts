@@ -110,11 +110,28 @@ export interface ConventionsConfig {
   optionalDecorator?: string;
 }
 
+/**
+ * A class reference (concrete or abstract) — anything assignable to a class
+ * constructor. Looked up against the project's AST index by `klass.name`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ModelConstructor = abstract new (...args: any[]) => unknown;
+
 export interface NestParserConfig {
   openapi: OpenApiConfig;
   project?: ProjectConfig;
   conventions?: ConventionsConfig;
   hooks?: NestParserHooks;
+  /**
+   * Class references to force-include in `components.schemas`, even when no
+   * endpoint reaches them. Pass the class itself (not its name) — we resolve
+   * via `klass.name` against the project's AST index. Throws at build time if
+   * any name cannot be matched, to surface typos and out-of-tree classes early.
+   *
+   * Transitive references of each entry are also pulled in (same reachability
+   * walk as if an endpoint had returned the class).
+   */
+  additionalModels?: ModelConstructor[];
 }
 
 /** Helper for `nestparser.config.ts` so users get full type-checking. */

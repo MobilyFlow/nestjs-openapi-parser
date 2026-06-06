@@ -22,14 +22,6 @@ export class SchemaBuilder {
 
   constructor(private readonly index: AstIndex) {}
 
-  /** Queue every entity and DTO so the spec covers them even if no endpoint refers to them. */
-  seedAll(): void {
-    for (const clazz of [...this.index.getEntities(), ...this.index.getDtos()]) {
-      const name = clazz.getName();
-      if (name) this.pending.add(name);
-    }
-  }
-
   /** Register a reference to a class schema and return the `$ref` fragment. */
   registerRef(name: string): OpenApiSchema {
     if (!this.index.hasClass(name)) return { type: 'object' };

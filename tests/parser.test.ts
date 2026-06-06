@@ -1,14 +1,27 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig, parseNestProject } from '../src/lib';
+import type { ModelConstructor, NestParserConfig } from '../src/lib';
 import type { OpenApiDocument } from '../src/types/openapi';
 
 const FIXTURE = path.resolve(__dirname, 'fixtures/example-app');
 
-async function buildFixtureDocument(): Promise<OpenApiDocument> {
+async function loadFixtureConfig(): Promise<NestParserConfig> {
   const { config } = await loadConfig({ projectRoot: FIXTURE });
+  return config;
+}
+
+async function buildFixtureDocument(
+  overrides: Partial<NestParserConfig> = {},
+): Promise<OpenApiDocument> {
+  const config = { ...(await loadFixtureConfig()), ...overrides };
   return parseNestProject({ projectRoot: FIXTURE, config });
 }
+
+// Stub classes used only as a name-based handle for the parser's AST lookup.
+// They must match a class name actually defined in the fixture's source tree.
+class AuditEvent {}
+class ListPostsQueryDto {}
 
 describe('parseNestProject (library API)', () => {
   it('builds the expected OpenAPI document for the example app', async () => {
@@ -111,5 +124,59 @@ describe('parseNestProject (library API)', () => {
     expect(update!.properties).toHaveProperty('email');
     expect(update!.properties).toHaveProperty('role');
     expect(update!.required ?? []).toEqual([]);
+  });
+
+  describe('schema reachability', () => {
+    it('omits classes that no endpoint reaches', async () => {
+      const document = await buildFixtureDocument();
+      const schemas = Object.keys(document.components?.schemas ?? {});
+      // ListPostsQueryDto is consumed only as `@Query()` expansion — never
+      // surfaces as a ref — so it must not be in components.schemas.
+      expect(schemas).not.toContain('ListPostsQueryDto');
+      // Orphan classes are absent.
+      expect(schemas).not.toContain('AuditEvent');
+      expect(schemas).not.toContain('AuditActor');
+    });
+
+    it('emits a schema for every class transitively reached from an endpoint', async () => {
+      const document = await buildFixtureDocument();
+      const schemas = document.components?.schemas ?? {};
+      // Reachable directly via controller return types / @Body / PartialType:
+      expect(schemas).toHaveProperty('User');
+      expect(schemas).toHaveProperty('BlogPost');
+      expect(schemas).toHaveProperty('CreateUserDto');
+      expect(schemas).toHaveProperty('UpdateUserDto');
+      expect(schemas).toHaveProperty('CreatePostDto');
+      expect(schemas).toHaveProperty('LoginDto');
+      expect(schemas).toHaveProperty('LoginResponseDto');
+      expect(schemas).toHaveProperty('HealthStatusDto');
+    });
+  });
+
+  describe('additionalModels', () => {
+    it('force-includes a class even when no endpoint references it', async () => {
+      const document = await buildFixtureDocument({ additionalModels: [ListPostsQueryDto] });
+      expect(document.components?.schemas).toHaveProperty('ListPostsQueryDto');
+    });
+
+    it('pulls in transitively-referenced classes from an added model', async () => {
+      const document = await buildFixtureDocument({ additionalModels: [AuditEvent] });
+      // AuditEvent has `actor: AuditActor` — both must be emitted.
+      expect(document.components?.schemas).toHaveProperty('AuditEvent');
+      expect(document.components?.schemas).toHaveProperty('AuditActor');
+      // Sanity: still doesn't pull unrelated orphans.
+      expect(document.components?.schemas).not.toHaveProperty('ListPostsQueryDto');
+    });
+
+    it('throws when an additionalModels entry is not in the source tree', async () => {
+      class NotInProject {}
+      const config = await loadFixtureConfig();
+      expect(() =>
+        parseNestProject({
+          projectRoot: FIXTURE,
+          config: { ...config, additionalModels: [NotInProject as ModelConstructor] },
+        }),
+      ).toThrow(/NotInProject/);
+    });
   });
 });

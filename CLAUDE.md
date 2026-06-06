@@ -104,6 +104,7 @@ Rules to remember:
 - Engine modules stay generic. Anything MobilyFlow-specific lives in `examples/mobilyflow.config.ts`, not in `src/`.
 - Hooks are the only extensibility point. New project-specific behavior → new hook on `NestParserConfig['hooks']`, default no-op.
 - `defaultSchema` in hook contexts is a **getter** (`() => OpenApiSchema`) so optional schemas aren't registered as `$ref`s when the hook overrides them. Don't make it eager.
+- Schema emission is **reachable-only** — only classes reached from endpoints (return types, `@Body()`, nested properties, transitive) end up in `components.schemas`. `seedAll()`-style preemptive seeding does NOT exist. Orphan classes are added via `config.additionalModels: [ClassRef, ...]` — passed as constructors, resolved by `klass.name` against the AST index, throws on miss.
 - One responsibility per file. CLI layer (`cli.ts`) only parses flags + writes the file; never put business logic there.
 - Read `package.json` at runtime via `readFileSync` + `JSON.parse`, not via `import '../package.json'` — keeps `rootDir: src` clean.
 - Public API is whatever `src/lib.ts` re-exports. If it's not in `lib.ts`, it's internal.

@@ -537,6 +537,22 @@
   },
   "components": {
     "schemas": {
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The user email"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
       "LoginResponseDto": {
         "type": "object",
         "properties": {
@@ -555,22 +571,6 @@
           "accessToken",
           "expiresIn",
           "userId"
-        ]
-      },
-      "LoginDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "description": "The user email"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "email",
-          "password"
         ]
       },
       "HealthStatusDto": {
@@ -613,81 +613,6 @@
           "body",
           "authorId"
         ]
-      },
-      "ListPostsQueryDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "DRAFT",
-              "PUBLISHED"
-            ]
-          },
-          "authorId": {
-            "type": "string"
-          },
-          "limit": {
-            "type": "number"
-          },
-          "offset": {
-            "type": "number"
-          }
-        }
-      },
-      "CreateUserDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "ADMIN",
-              "USER"
-            ]
-          },
-          "bio": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "email",
-          "name",
-          "role",
-          "password"
-        ]
-      },
-      "UpdateUserDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "ADMIN",
-              "USER"
-            ]
-          },
-          "bio": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        }
       },
       "BlogPost": {
         "type": "object",
@@ -775,6 +700,60 @@
           "updatedAt"
         ],
         "description": "A registered user."
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "USER"
+            ]
+          },
+          "bio": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name",
+          "role",
+          "password"
+        ]
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "USER"
+            ]
+          },
+          "bio": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
       }
     },
     "securitySchemes": {

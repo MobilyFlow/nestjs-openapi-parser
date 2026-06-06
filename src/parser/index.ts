@@ -26,7 +26,17 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
   });
 
   const schemaBuilder = new SchemaBuilder(index);
-  schemaBuilder.seedAll();
+
+  for (const klass of config.additionalModels ?? []) {
+    const name = klass.name;
+    if (!index.hasClass(name)) {
+      throw new Error(
+        `additionalModels: class "${name}" was not found in the project source tree. ` +
+          `Make sure it is defined in a .ts file under the configured rootDir.`,
+      );
+    }
+    schemaBuilder.registerRef(name);
+  }
 
   const registeredSchemes = Object.keys(config.openapi.securitySchemes ?? {});
 
