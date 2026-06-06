@@ -3,6 +3,9 @@ import { Public } from '../common/public.decorator';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 
+/**
+ * This controller manage auth
+ */
 @Controller('auth')
 export class AuthController {
   /**
