@@ -129,6 +129,15 @@ describe('parseNestProject (library API)', () => {
     expect(users?.description).toBeUndefined();
   });
 
+  it('honors @Tag JSDoc to override the derived default tag name', async () => {
+    const document = await buildFixtureDocument();
+    expect(document.tags?.find((t) => t.name === 'System Health')).toBeDefined();
+    expect(document.tags?.find((t) => t.name === 'Health')).toBeUndefined();
+    expect((document.paths['/api/health'].get as { tags: string[] }).tags).toEqual([
+      'System Health',
+    ]);
+  });
+
   it('resolves UpdateUserDto via PartialType(CreateUserDto) with all fields optional', async () => {
     const document = await buildFixtureDocument();
     const update = document.components?.schemas?.UpdateUserDto as

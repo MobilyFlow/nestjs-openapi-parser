@@ -97,9 +97,9 @@
     },
     "/api/health": {
       "get": {
-        "operationId": "Health_check",
+        "operationId": "SystemHealth_check",
         "tags": [
-          "Health"
+          "System Health"
         ],
         "description": "Liveness probe.",
         "responses": {
@@ -846,7 +846,7 @@
       "description": "This controller manage auth"
     },
     {
-      "name": "Health"
+      "name": "System Health"
     },
     {
       "name": "Posts"

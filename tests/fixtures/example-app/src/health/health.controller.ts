@@ -7,6 +7,9 @@ export class HealthStatusDto {
   uptimeSeconds!: number;
 }
 
+/**
+ * @Tag System Health
+ */
 @Public()
 @Controller('health')
 export class HealthController {

@@ -150,17 +150,31 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 
 ### Routes
 
-| Source                                                 | Becomes                                                          |
-| ------------------------------------------------------ | ---------------------------------------------------------------- |
-| `@Controller('users')`                                 | base path + tag (`Users` by default, strip `Controller` suffix)  |
-| `@ApiTags('Auth')` on a controller or method           | overrides the derived tag                                        |
-| `@Get/@Post/@Put/@Delete/@Patch('path')`               | OpenAPI operation under `paths[fullPath][httpMethod]`            |
-| `:id` route placeholders                               | rewritten to `{id}` in the OpenAPI path                          |
-| `app.setGlobalPrefix('v1')`                            | declare via `project.globalPrefix` in the config                 |
-| Method's JSDoc                                         | `operation.description`                                          |
-| Controller class JSDoc                                 | `tags[].description`                                             |
+| Source                                                 | Becomes                                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `@Controller('users')`                                 | base path + default tag derived from the class name (see below)                |
+| `@Get/@Post/@Put/@Delete/@Patch('path')`               | OpenAPI operation under `paths[fullPath][httpMethod]`                          |
+| `:id` route placeholders                               | rewritten to `{id}` in the OpenAPI path                                        |
+| `app.setGlobalPrefix('v1')`                            | declare via `project.globalPrefix` in the config                               |
+| Method's JSDoc                                         | `operation.description`                                                        |
+| Controller class JSDoc                                 | `tags[].description`                                                           |
+| `@Tag <name>` JSDoc tag (controller or method)         | overrides the derived tag for that controller / operation                      |
 
-HTTP-method decorators are matched by **identifier name** (`Get`, `Post`, …). Aliased imports (`import { Post as HttpPost }`) won't be detected. Same goes for `Controller`, `ApiTags`, `Body`, `Query`, `Param`, `Headers`.
+**Default tag derivation.** The class name has its trailing `Controller` suffix stripped, then PascalCase boundaries are split with spaces — `UserAuthController` → `"User Auth"`, `HealthController` → `"Health"`, `APIClientController` → `"API Client"`. Override the rule globally via the [`controllerTag`](#hooks-project-specific-glue) hook, or per-controller / per-method via a `@Tag <name>` JSDoc tag (single line, like `@Scope`):
+
+```ts
+/**
+ * @Tag System Health
+ */
+@Controller('health')
+export class HealthController {
+  @Get()
+  /** @Tag Diagnostics */
+  ping() { /* ... */ }
+}
+```
+
+HTTP-method decorators (and `@Controller`, `@Body`, `@Query`, `@Param`, `@Headers`) are matched by **local identifier name**. Aliased imports like `import { Post as HttpPost }` won't be detected.
 
 ### Parameters & request body
 
@@ -435,7 +449,7 @@ Return:
 Override the default conventions:
 
 - `isDto` — default matches `*.dto.ts` filename **or** class name ending in `DTO`/`Dto`.
-- `controllerTag` — default strips `Controller` suffix from the class name.
+- `controllerTag` — default strips the `Controller` suffix and splits PascalCase boundaries with spaces (`UserAuthController` → `"User Auth"`). For one-off overrides, prefer the `@Tag <name>` JSDoc tag on the controller (or method) — no hook needed.
 
 The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup with both hooks (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).
 

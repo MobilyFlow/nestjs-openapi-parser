@@ -74,8 +74,9 @@ export class PathBuilder {
     if (!isVisible(getScopes(getTags(controller)), this.activeScopes)) return;
 
     const basePath = this.stringArg(controller.getDecorator('Controller'), 0) ?? '';
-    const defaultTag = (this.hooks.controllerTag ?? this.defaultTag)(controller);
-    const tag = this.stringArg(controller.getDecorator('ApiTags'), 0) ?? defaultTag;
+    const controllerTagBag = getTags(controller);
+    const tag =
+      controllerTagBag.Tag?.[0] ?? (this.hooks.controllerTag ?? this.defaultTag)(controller);
 
     if (!this.tags.has(tag)) {
       const rawDesc = controller.getJsDocs()[0]?.getCommentText();
@@ -97,7 +98,7 @@ export class PathBuilder {
       const routePath = this.stringArg(httpDecorator, 0) ?? '';
       const fullPath = this.toOpenApiPath(this.joinPath(this.globalPrefix, basePath, routePath));
 
-      const methodTag = this.stringArg(method.getDecorator('ApiTags'), 0) ?? tag;
+      const methodTag = getTags(method).Tag?.[0] ?? tag;
       const operation = this.buildOperation(controller, method, httpMethod, methodTag);
 
       this.paths[fullPath] ??= {};
@@ -279,7 +280,10 @@ export class PathBuilder {
   }
 
   private defaultTag(controller: ClassDeclaration): string {
-    return (controller.getName() ?? 'Default').replace(/Controller$/, '');
+    const base = (controller.getName() ?? 'Default').replace(/Controller$/, '');
+    return base
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
   }
 
   private uniqueOperationId(tag: string, methodName: string): string {
