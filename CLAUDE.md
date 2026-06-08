@@ -12,6 +12,7 @@ Published as `nestjs-openapi-parser`. Invoked as `nestparser` (`bin` field).
 - **Language**: TypeScript, `target: ES2022`, `module: commonjs`.
 - **AST**: `ts-morph` — the only AST tool. Do not introduce `@nestjs/*` runtime deps or `reflect-metadata`.
 - **CLI**: `commander`.
+- **Output validation**: `@seriousme/openapi-schema-validator` (ESM-only) checks the generated document against the OpenAPI 3.x JSON Schema. It's imported through a `Function('return import(...)')` shim in [src/validate.ts](src/validate.ts) so `tsc` doesn't downlevel the dynamic `import()` to a `require()` (which would throw on the ESM-only package under `module: commonjs`).
 - **Config file loader**: handles `.ts/.mts/.cts/.mjs/.cjs/.js/.json` — `.ts*` files go through `tsx/cjs` (registered lazily).
 - **Dev runner**: `tsx`.
 - **Build**: `tsc` → `dist/`.
@@ -30,11 +31,12 @@ src/
     loader.ts           # Cosmiconfig-style discovery + multi-format loading
     index.ts
   parser/
-    index.ts            # parseNestProject(options) — orchestrates the three builders
+    index.ts            # parseNestProject(options) — async; orchestrates the three builders, then self-validates
     ast-index.ts        # Walk tsconfig project, index classes/enums/entities/DTOs/controllers
     schema-builder.ts   # TS classes → components.schemas
     path-builder.ts     # Controllers + HTTP decorators → paths, with hook injection
     tags.ts             # JSDoc tag extraction + @Scope filtering + <scope>…</scope> fragments
+  validate.ts           # validateDocument(doc) → { valid, errors } against the OpenAPI 3.x schema
   types/
     openapi.ts          # OpenAPI document/schema types
 ```
@@ -101,7 +103,9 @@ Rules to remember:
 ## Conventions
 
 - Engine modules stay generic. Project-specific behavior belongs in user configs (`nestparser.config.ts`) via the hook surface, not in `src/`. The test fixture at `tests/fixtures/example-app/nestparser.config.ts` is the in-tree reference.
-- Hooks are the only extensibility point. New project-specific behavior → new hook on `NestParserConfig['hooks']`, default no-op.
+- Hooks are the only extensibility point. New project-specific behavior → new hook on `NestParserConfig['hooks']`, default no-op. The four hooks today are `buildResponseSchema` (response envelope/wrapper), `resolveSecurity` (per-endpoint security from your own auth decorators), `controllerTag` (override the default tag derivation), and `endpointSummary` (override the humanized-method-name summary). Hook contracts live in [src/config/types.ts](src/config/types.ts).
+- **Self-validation is a hard invariant.** `parseNestProject` is **async** and runs `validateDocument` on the finished document before returning; an invalid document **throws** (it signals a parser/config bug, never something to ship). Don't add a "skip validation" escape hatch — the throw is the contract. The CLI surfaces it as a non-zero exit, so it doubles as a CI gate.
+- **`openapi.title`/`version` are filled, not required.** When a config omits either field (or there's no config at all), [src/config/loader.ts](src/config/loader.ts) backfills from the project's `package.json` (`name`/`version`, else generic `API`/`1.0.0`) and warns. A present field always wins; a missing one never blocks generation.
 - `defaultSchema` in hook contexts is a **getter** (`() => OpenApiSchema`) so optional schemas aren't registered as `$ref`s when the hook overrides them. Don't make it eager.
 - Schema emission is **reachable-only** — only classes reached from endpoints (return types, `@Body()`, nested properties, transitive) end up in `components.schemas`. `seedAll()`-style preemptive seeding does NOT exist. Orphan classes are added via `config.additionalModels: [ClassRef, ...]` — passed as constructors, resolved by `klass.name` against the AST index, throws on miss.
 - **JSDoc tags** are extracted via [src/parser/tags.ts](src/parser/tags.ts) (`getTags`, `getScopes`, `isVisible`, `parseScopeList`). ts-morph's native `JSDoc.getTags()` does the heavy lifting — tags must be at line-start to be recognized, matching the `* @TagName value` convention. Tag values are taken from **the same line only** (the first line of `getCommentText()`); subsequent lines remain part of the description even though ts-morph would otherwise attribute them to the tag's body.
