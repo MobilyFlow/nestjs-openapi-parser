@@ -120,9 +120,8 @@ export class SchemaBuilder {
             knownScopes: this.knownScopes,
           })
         : undefined;
-      if (desc) schema.description = desc;
 
-      properties[name] = schema;
+      properties[name] = desc ? withDescription(schema, desc) : schema;
       if (!this.index.isOptionalProperty(prop)) required.push(name);
     }
 
@@ -256,4 +255,18 @@ export class SchemaBuilder {
 
 function formatScopes(scopes: Set<string>): string {
   return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
+}
+
+/**
+ * Attach a `description` to a property schema. A `$ref` is a Reference Object
+ * whose sibling keys are ignored in OpenAPI 3.0, so a bare `$ref` is wrapped in
+ * `allOf` (a normal Schema Object) so the description is actually honored. Any
+ * other schema takes the description directly as a sibling.
+ */
+function withDescription(schema: OpenApiSchema, description: string): OpenApiSchema {
+  if ('$ref' in schema) {
+    return { allOf: [schema], description };
+  }
+  schema.description = description;
+  return schema;
 }

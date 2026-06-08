@@ -804,7 +804,11 @@
             "description": "Last IP address used to sign in."
           },
           "adminMeta": {
-            "$ref": "#/components/schemas/AdminMeta",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminMeta"
+              }
+            ],
             "description": "Admin-only overlay attached to the user."
           },
           "createdAt": {

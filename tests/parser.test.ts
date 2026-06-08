@@ -833,3 +833,65 @@ describe('optional & unsupported route patterns', () => {
     expect(warnings.some((w) => w.includes(':a?/:b?') && /optional/.test(w))).toBe(true);
   });
 });
+
+describe('property descriptions on $ref schemas', () => {
+  // A `$ref` is a Reference Object whose siblings are ignored in OpenAPI 3.0, so a
+  // described class-typed property must be wrapped in `allOf` for the description
+  // to survive. Undescribed refs stay bare; primitives take the description inline.
+  function holderProps(): Record<string, Record<string, unknown>> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-refdesc-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', strict: false },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'export class Inner {',
+          '  x!: string;',
+          '}',
+          'export class Outer {',
+          '  /** Described overlay. */',
+          '  described!: Inner;',
+          '  plain!: Inner;',
+          '  /** An email. */',
+          '  email!: string;',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const index = new AstIndex({
+        projectRoot: tmp,
+        project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+      });
+      const outer = index.getClass('Outer');
+      expect(outer).toBeDefined();
+      return new SchemaBuilder(index).buildMembers(outer!).properties as Record<
+        string,
+        Record<string, unknown>
+      >;
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('wraps a described class-typed property in allOf so the description survives', () => {
+    expect(holderProps().described).toEqual({
+      allOf: [{ $ref: '#/components/schemas/Inner' }],
+      description: 'Described overlay.',
+    });
+  });
+
+  it('leaves an undescribed class-typed property as a bare $ref', () => {
+    expect(holderProps().plain).toEqual({ $ref: '#/components/schemas/Inner' });
+  });
+
+  it('keeps a described primitive property inline (description as a normal sibling)', () => {
+    expect(holderProps().email).toEqual({ type: 'string', description: 'An email.' });
+  });
+});

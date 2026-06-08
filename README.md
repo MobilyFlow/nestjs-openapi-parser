@@ -227,6 +227,9 @@ The schema builder accepts TypeScript classes and produces OpenAPI object schema
 | `extends IntersectionType(A, B, ...)`                 | merged                                                                  |
 | Class JSDoc                                           | `schema.description`                                                    |
 | Property JSDoc                                        | property-level `description`                                            |
+| Property JSDoc on a **class-typed** property          | `{ allOf: [{ $ref }], description }` (see below)                        |
+
+A `$ref` is an OpenAPI 3.0 Reference Object whose sibling keys are ignored, so a class-typed property that also carries a JSDoc description is emitted as `{ allOf: [{ $ref }], description }` rather than `{ $ref, description }` — otherwise the description would be silently dropped by tooling. Class-typed properties without a description stay a bare `{ $ref }`.
 
 #### Schema reachability
 
