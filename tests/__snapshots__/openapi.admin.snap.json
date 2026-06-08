@@ -158,7 +158,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -166,7 +167,9 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           },
           {
@@ -174,7 +177,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "minimum": 0
             }
           }
         ],
@@ -605,10 +609,12 @@
         "properties": {
           "email": {
             "type": "string",
+            "format": "email",
             "description": "The user email"
           },
           "password": {
-            "type": "string"
+            "type": "string",
+            "minLength": 8
           }
         },
         "required": [
@@ -655,13 +661,15 @@
         "type": "object",
         "properties": {
           "title": {
-            "type": "string"
+            "type": "string",
+            "minLength": 3
           },
           "body": {
             "type": "string"
           },
           "authorId": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "status": {
             "type": "string",
@@ -777,10 +785,12 @@
         "type": "object",
         "properties": {
           "email": {
-            "type": "string"
+            "type": "string",
+            "format": "email"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 2
           },
           "role": {
             "type": "string",
@@ -793,7 +803,8 @@
             "type": "string"
           },
           "password": {
-            "type": "string"
+            "type": "string",
+            "minLength": 8
           }
         },
         "required": [
@@ -807,10 +818,12 @@
         "type": "object",
         "properties": {
           "email": {
-            "type": "string"
+            "type": "string",
+            "format": "email"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 2
           },
           "role": {
             "type": "string",
@@ -823,7 +836,8 @@
             "type": "string"
           },
           "password": {
-            "type": "string"
+            "type": "string",
+            "minLength": 8
           }
         }
       }

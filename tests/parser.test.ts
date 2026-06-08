@@ -895,3 +895,97 @@ describe('property descriptions on $ref schemas', () => {
     expect(holderProps().email).toEqual({ type: 'string', description: 'An email.' });
   });
 });
+
+describe('class-validator constraint mapping', () => {
+  function props(): Record<string, Record<string, unknown>> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-validator-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Min(n: number): PropertyDecorator;',
+          'declare function Max(n: number): PropertyDecorator;',
+          'declare function MinLength(n: number): PropertyDecorator;',
+          'declare function MaxLength(n: number): PropertyDecorator;',
+          'declare function Length(a: number, b: number): PropertyDecorator;',
+          'declare function IsInt(): PropertyDecorator;',
+          'declare function IsEmail(): PropertyDecorator;',
+          'declare function IsUrl(): PropertyDecorator;',
+          'declare function IsUUID(): PropertyDecorator;',
+          'declare function IsDateString(): PropertyDecorator;',
+          'declare function Matches(re: RegExp): PropertyDecorator;',
+          'declare function IsPositive(): PropertyDecorator;',
+          'declare function IsNegative(): PropertyDecorator;',
+          'declare function ArrayMinSize(n: number): PropertyDecorator;',
+          'declare function ArrayMaxSize(n: number): PropertyDecorator;',
+          '',
+          'export class V {',
+          '  @Min(1) @Max(100) @IsInt() count!: number;',
+          '  @MinLength(2) @MaxLength(8) name!: string;',
+          '  @Length(3, 5) code!: string;',
+          '  @IsEmail() email!: string;',
+          '  @IsUrl() website!: string;',
+          '  @IsUUID() id!: string;',
+          '  @IsDateString() when!: string;',
+          '  @Matches(/^\\d{3}$/) zip!: string;',
+          '  @IsPositive() pos!: number;',
+          '  @IsNegative() neg!: number;',
+          '  @Min(-5) floor!: number;',
+          '  @ArrayMinSize(1) @ArrayMaxSize(3) tags!: string[];',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const index = new AstIndex({
+        projectRoot: tmp,
+        project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+      });
+      const v = index.getClass('V');
+      expect(v).toBeDefined();
+      return new SchemaBuilder(index).buildMembers(v!).properties as Record<
+        string,
+        Record<string, unknown>
+      >;
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('maps numeric, length, format, pattern and array constraints', () => {
+    const p = props();
+    expect(p.count).toEqual({ type: 'integer', minimum: 1, maximum: 100 });
+    expect(p.name).toEqual({ type: 'string', minLength: 2, maxLength: 8 });
+    expect(p.code).toEqual({ type: 'string', minLength: 3, maxLength: 5 });
+    expect(p.email).toEqual({ type: 'string', format: 'email' });
+    expect(p.website).toEqual({ type: 'string', format: 'uri' });
+    expect(p.id).toEqual({ type: 'string', format: 'uuid' });
+    expect(p.when).toEqual({ type: 'string', format: 'date-time' });
+    expect(p.zip).toEqual({ type: 'string', pattern: '^\\d{3}$' });
+    expect(p.tags).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: 3,
+    });
+  });
+
+  it('maps @IsPositive/@IsNegative to exclusive bounds and handles negative literals', () => {
+    const p = props();
+    expect(p.pos).toEqual({ type: 'number', minimum: 0, exclusiveMinimum: true });
+    expect(p.neg).toEqual({ type: 'number', maximum: 0, exclusiveMaximum: true });
+    expect(p.floor).toEqual({ type: 'number', minimum: -5 });
+  });
+});

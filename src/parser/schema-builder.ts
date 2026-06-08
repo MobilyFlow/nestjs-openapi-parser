@@ -1,4 +1,4 @@
-import { ClassDeclaration, Node, Type } from 'ts-morph';
+import { ClassDeclaration, Node, PropertyDeclaration, SyntaxKind, Type } from 'ts-morph';
 import type { OpenApiSchema } from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
@@ -113,6 +113,7 @@ export class SchemaBuilder {
 
       const name = prop.getName();
       const schema = this.schemaForType(prop.getType());
+      this.applyValidatorConstraints(schema, prop);
       const rawDesc = prop.getJsDocs()[0]?.getCommentText();
       const desc = rawDesc
         ? filterScopedComments(rawDesc, this.activeScopes, {
@@ -217,6 +218,84 @@ export class SchemaBuilder {
     return { enum: values };
   }
 
+  /**
+   * Merge class-validator constraints from a property's decorators into its
+   * schema. Unknown decorators are ignored. A `$ref` is left untouched (its
+   * siblings are ignored by OpenAPI 3.0, so constraints don't belong on it).
+   *
+   *  - `@Min/@Max`                  -> `minimum` / `maximum`
+   *  - `@MinLength/@MaxLength`      -> `minLength` / `maxLength`
+   *  - `@Length(min, max)`         -> `minLength` + `maxLength`
+   *  - `@ArrayMinSize/@ArrayMaxSize` -> `minItems` / `maxItems`
+   *  - `@IsEmail/@IsUrl/@IsUUID/@IsDateString` -> `format`
+   *  - `@Matches(/re/)`            -> `pattern`
+   *  - `@IsInt`                    -> narrows `number` to `integer`
+   *  - `@IsPositive/@IsNegative`   -> exclusive `minimum` / `maximum` of 0
+   */
+  private applyValidatorConstraints(schema: OpenApiSchema, prop: PropertyDeclaration): void {
+    if ('$ref' in schema) return;
+
+    for (const decorator of prop.getDecorators()) {
+      const args = decorator.getArguments();
+      const setNum = (key: string, value: number | undefined): void => {
+        if (value !== undefined) schema[key] = value;
+      };
+
+      switch (decorator.getName()) {
+        case 'Min':
+          setNum('minimum', literalNumber(args[0]));
+          break;
+        case 'Max':
+          setNum('maximum', literalNumber(args[0]));
+          break;
+        case 'MinLength':
+          setNum('minLength', literalNumber(args[0]));
+          break;
+        case 'MaxLength':
+          setNum('maxLength', literalNumber(args[0]));
+          break;
+        case 'Length':
+          setNum('minLength', literalNumber(args[0]));
+          setNum('maxLength', literalNumber(args[1]));
+          break;
+        case 'ArrayMinSize':
+          setNum('minItems', literalNumber(args[0]));
+          break;
+        case 'ArrayMaxSize':
+          setNum('maxItems', literalNumber(args[0]));
+          break;
+        case 'IsEmail':
+          schema.format = 'email';
+          break;
+        case 'IsUrl':
+          schema.format = 'uri';
+          break;
+        case 'IsUUID':
+          schema.format = 'uuid';
+          break;
+        case 'IsDateString':
+          schema.format = 'date-time';
+          break;
+        case 'IsInt':
+          if (schema.type === 'number') schema.type = 'integer';
+          break;
+        case 'IsPositive':
+          schema.minimum = 0;
+          schema.exclusiveMinimum = true;
+          break;
+        case 'IsNegative':
+          schema.maximum = 0;
+          schema.exclusiveMaximum = true;
+          break;
+        case 'Matches': {
+          const pattern = regexLiteralPattern(args[0]);
+          if (pattern !== undefined) schema.pattern = pattern;
+          break;
+        }
+      }
+    }
+  }
+
   private mergeMembers(a: SchemaMembers, b: SchemaMembers): SchemaMembers {
     const properties = { ...a.properties, ...b.properties };
     const required = [...new Set([...a.required, ...b.required])].filter((k) => k in properties);
@@ -255,6 +334,28 @@ export class SchemaBuilder {
 
 function formatScopes(scopes: Set<string>): string {
   return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
+}
+
+/** A numeric decorator argument, supporting a leading unary `-`/`+` (e.g. `@Min(-1)`). */
+function literalNumber(arg: Node | undefined): number | undefined {
+  if (!arg) return undefined;
+  if (Node.isNumericLiteral(arg)) return arg.getLiteralValue();
+  if (Node.isPrefixUnaryExpression(arg)) {
+    const operand = arg.getOperand();
+    if (Node.isNumericLiteral(operand)) {
+      const value = operand.getLiteralValue();
+      return arg.getOperatorToken() === SyntaxKind.MinusToken ? -value : value;
+    }
+  }
+  return undefined;
+}
+
+/** The pattern of a `@Matches(...)` argument — a regex literal `/re/flags` or a string. */
+function regexLiteralPattern(arg: Node | undefined): string | undefined {
+  if (!arg) return undefined;
+  if (Node.isStringLiteral(arg)) return arg.getLiteralValue();
+  const match = /^\/(.*)\/[dgimsuy]*$/s.exec(arg.getText());
+  return match ? match[1] : undefined;
 }
 
 /**

@@ -15,9 +15,10 @@ Ships a CLI (`nestparser`) and a programmatic API.
 - **Reachability-only schemas** — only classes reached from an endpoint end up in `components.schemas`; orphans don't leak.
 - **Nest mapped types** — `PartialType / PickType / OmitType / IntersectionType` are resolved structurally.
 - **`@Query() dto: DTO`** is expanded into individual query parameters.
+- **`class-validator` constraints** — `@Min/@Max/@MinLength/@IsEmail/@IsUUID/@Matches/@IsInt`… become `minimum/maximum/minLength/format/pattern`…
 - **Documentation variants via `@Scope`** — emit `public`, `internal`, `admin`… flavors of the same spec from a single source.
-- **Pluggable hooks** for response envelopes, security resolution, DTO/tag conventions.
-- **Tiny config surface** with sane TypeORM + `class-validator` defaults.
+- **Pluggable hooks** for response envelopes, security resolution, and tag conventions.
+- **Tiny config surface** with sane defaults.
 
 ## Requirements
 
@@ -230,6 +231,26 @@ The schema builder accepts TypeScript classes and produces OpenAPI object schema
 | Property JSDoc on a **class-typed** property          | `{ allOf: [{ $ref }], description }` (see below)                        |
 
 A `$ref` is an OpenAPI 3.0 Reference Object whose sibling keys are ignored, so a class-typed property that also carries a JSDoc description is emitted as `{ allOf: [{ $ref }], description }` rather than `{ $ref, description }` — otherwise the description would be silently dropped by tooling. Class-typed properties without a description stay a bare `{ $ref }`.
+
+#### `class-validator` constraints
+
+Constraint decorators on a property are translated into the matching schema keywords (unknown decorators are ignored). These compose with the type-derived schema and propagate through `PartialType`/`PickType`/`OmitType`/`IntersectionType`:
+
+| Decorator                         | Schema keyword(s)                          |
+| --------------------------------- | ------------------------------------------ |
+| `@Min(n)` / `@Max(n)`             | `minimum` / `maximum`                      |
+| `@MinLength(n)` / `@MaxLength(n)` | `minLength` / `maxLength`                  |
+| `@Length(min, max)`               | `minLength` + `maxLength`                  |
+| `@ArrayMinSize(n)` / `@ArrayMaxSize(n)` | `minItems` / `maxItems`              |
+| `@IsEmail()`                      | `format: 'email'`                          |
+| `@IsUrl()`                        | `format: 'uri'`                            |
+| `@IsUUID()`                       | `format: 'uuid'`                           |
+| `@IsDateString()`                 | `format: 'date-time'`                      |
+| `@Matches(/re/)`                  | `pattern` (regex literal or string)        |
+| `@IsInt()`                        | narrows `number` → `integer`               |
+| `@IsPositive()` / `@IsNegative()` | exclusive `minimum` / `maximum` of `0`     |
+
+So `@IsInt() @Min(1) @Max(100) limit: number` becomes `{ type: 'integer', minimum: 1, maximum: 100 }`, and `@IsEmail() email: string` becomes `{ type: 'string', format: 'email' }`. Like everything else, decorators are matched by **local identifier name**.
 
 #### Schema reachability
 
