@@ -17,6 +17,7 @@ Ships a CLI (`nestparser`) and a programmatic API.
 - **`@Query() dto: DTO`** is expanded into individual query parameters.
 - **`class-validator` constraints** — `@Min/@Max/@MinLength/@IsEmail/@IsUUID/@Matches/@IsInt`… become `minimum/maximum/minLength/format/pattern`…
 - **Documentation variants via `@Scope`** — emit `public`, `internal`, `admin`… flavors of the same spec from a single source.
+- **Self-validating output** — every generated document is checked against the OpenAPI 3.x JSON Schema; an invalid spec throws instead of being emitted.
 - **Pluggable hooks** for response envelopes, security resolution, and tag conventions.
 - **Tiny config surface** with sane defaults.
 
@@ -114,6 +115,12 @@ Options:
   -h, --help              display help
 ```
 
+### Validation
+
+The parser **self-validates** its output: `parseNestProject` checks the generated document against the OpenAPI 3.x JSON Schema (via [`@seriousme/openapi-schema-validator`](https://github.com/seriousme/openapi-schema-validator)) before returning, and **throws** if it's invalid — a produced-but-invalid document signals a parser/config bug, never something to ship silently. The CLI surfaces that as a non-zero exit with the errors, so it doubles as a CI gate. (Because validation is async, `parseNestProject` returns a `Promise`.) The same check is exposed directly as `validateDocument(doc) → { valid, errors }` from the library entry.
+
+The config is also validated up front: `openapi.title` and `openapi.version` must be non-empty strings (the loader fails fast with a clear message otherwise — relevant for JSON/JS configs that bypass the `defineConfig` types).
+
 ### Config file discovery
 
 The CLI looks for the first file matching, inside `--project`:
@@ -138,7 +145,7 @@ import { writeFileSync } from 'node:fs';
 
 const projectRoot = process.cwd();
 const { config } = await loadConfig({ projectRoot });
-const document = parseNestProject({ projectRoot, config });
+const document = await parseNestProject({ projectRoot, config });
 
 writeFileSync('openapi.json', JSON.stringify(document, null, 2));
 ```
@@ -492,6 +499,7 @@ import {
   parseNestProject,
   loadConfig,
   defineConfig,
+  validateDocument,
   filterScopedComments,
   getScopes,
   getTags,
@@ -514,8 +522,11 @@ const { config, filePath } = await loadConfig({ projectRoot });
 // Or build the config inline
 const inline = defineConfig({ openapi: { title: 'X', version: '1.0' } });
 
-// Generate the document
-const doc: OpenApiDocument = parseNestProject({ projectRoot, config });
+// Generate the document — async, and self-validates (throws on an invalid spec)
+const doc: OpenApiDocument = await parseNestProject({ projectRoot, config });
+
+// Or validate any document yourself against the OpenAPI schema
+const { valid, errors } = await validateDocument(doc);
 ```
 
 The internal builders (`AstIndex`, `SchemaBuilder`, `PathBuilder`) are also exported if you need fine-grained control, but the stable surface is `parseNestProject` + `loadConfig`.

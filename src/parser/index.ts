@@ -1,5 +1,6 @@
 import type { NestParserConfig } from '../config/types';
 import type { OpenApiDocument } from '../types/openapi';
+import { validateDocument } from '../validate';
 import { AstIndex } from './ast-index';
 import { PathBuilder } from './path-builder';
 import { SchemaBuilder } from './schema-builder';
@@ -15,8 +16,13 @@ export interface ParseNestProjectOptions {
 /**
  * Build an OpenAPI 3.0.3 document from a NestJS project's TypeScript source.
  * Pure static analysis — no app boot, no decorator reflection.
+ *
+ * The produced document is validated against the OpenAPI 3.x schema before it is
+ * returned; an invalid document throws (it indicates a parser/config bug rather
+ * than something the caller should silently ship). This is why the function is
+ * async — schema validation runs through `@seriousme/openapi-schema-validator`.
  */
-export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocument {
+export async function parseNestProject(options: ParseNestProjectOptions): Promise<OpenApiDocument> {
   const { projectRoot, config } = options;
 
   const index = new AstIndex({
@@ -90,6 +96,15 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
 
   if (tags.length > 0) {
     document.tags = tags;
+  }
+
+  const { valid, errors } = await validateDocument(document);
+  if (!valid) {
+    throw new Error(
+      `Generated OpenAPI document failed schema validation:\n${errors
+        .map((e) => `  - ${e}`)
+        .join('\n')}`,
+    );
   }
 
   return document;

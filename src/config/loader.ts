@@ -66,8 +66,13 @@ function isConfigShape(value: unknown): value is NestParserConfig {
     typeof value === 'object' &&
     value !== null &&
     'openapi' in value &&
-    typeof (value as { openapi: unknown }).openapi === 'object'
+    typeof (value as { openapi: unknown }).openapi === 'object' &&
+    (value as { openapi: unknown }).openapi !== null
   );
+}
+
+function nonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export interface LoadConfigOptions {
@@ -94,6 +99,12 @@ export async function loadConfig(options: LoadConfigOptions): Promise<LoadedConf
     throw new Error(
       `Config at ${filePath} does not export a valid NestParserConfig (missing 'openapi').`,
     );
+  }
+  if (!nonEmptyString(raw.openapi.title)) {
+    throw new Error(`Config at ${filePath}: 'openapi.title' must be a non-empty string.`);
+  }
+  if (!nonEmptyString(raw.openapi.version)) {
+    throw new Error(`Config at ${filePath}: 'openapi.version' must be a non-empty string.`);
   }
   return { config: raw, filePath };
 }

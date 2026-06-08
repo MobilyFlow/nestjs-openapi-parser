@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   filterScopedComments,
   getScopes,
@@ -11,6 +11,13 @@ import {
 import type { ModelConstructor, NestParserConfig } from '../src/lib';
 import { AstIndex } from '../src/parser/ast-index';
 import type { OpenApiDocument } from '../src/types/openapi';
+
+// parseNestProject self-validates via a native dynamic import of an ESM-only
+// package that vitest's VM can't host. Stub it for these in-process tests; the
+// real validation runs in a real Node process via the CLI tests (cli.test.ts).
+vi.mock('../src/validate', () => ({
+  validateDocument: async () => ({ valid: true, errors: [] }),
+}));
 
 const FIXTURE = path.resolve(__dirname, 'fixtures/example-app');
 
@@ -234,7 +241,7 @@ describe('tag parsing helpers', () => {
   describe('scoped descriptions in the fixture', () => {
     it('drops all fragments when no scope is active', async () => {
       const { config } = await loadConfig({ projectRoot: FIXTURE });
-      const doc = parseNestProject({ projectRoot: FIXTURE, config });
+      const doc = await parseNestProject({ projectRoot: FIXTURE, config });
       const user = doc.components?.schemas?.User as {
         description: string;
         properties: { email: { description: string } };
@@ -247,7 +254,7 @@ describe('tag parsing helpers', () => {
 
     it("appends internal paragraphs when scopes: ['internal']", async () => {
       const { config } = await loadConfig({ projectRoot: FIXTURE });
-      const doc = parseNestProject({
+      const doc = await parseNestProject({
         projectRoot: FIXTURE,
         config: { ...config, scopes: ['internal', 'admin'] },
       });
@@ -265,7 +272,7 @@ describe('tag parsing helpers', () => {
 
     it("includes only admin-tagged fragments when scopes: ['admin']", async () => {
       const { config } = await loadConfig({ projectRoot: FIXTURE });
-      const doc = parseNestProject({
+      const doc = await parseNestProject({
         projectRoot: FIXTURE,
         config: { ...config, scopes: ['admin'] },
       });

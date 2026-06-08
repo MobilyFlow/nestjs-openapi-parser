@@ -38,7 +38,7 @@ async function run(options: CliOptions): Promise<void> {
     console.log(`Active scopes: ${effectiveConfig.scopes.join(', ')}`);
   }
 
-  const document = parseNestProject({ projectRoot, config: effectiveConfig });
+  const document = await parseNestProject({ projectRoot, config: effectiveConfig });
 
   mkdirSync(path.dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(document, null, 2));

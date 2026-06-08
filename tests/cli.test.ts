@@ -1,8 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadConfig, parseNestProject } from '../src/lib';
+
+// The in-process parseNestProject call below self-validates via a native dynamic
+// import of an ESM-only package that vitest's VM can't host; stub it. The spawned
+// CLI runs in a real Node process, so its validation is the genuine one.
+vi.mock('../src/validate', () => ({
+  validateDocument: async () => ({ valid: true, errors: [] }),
+}));
 
 const ROOT = path.resolve(__dirname, '..');
 const FIXTURE = path.resolve(__dirname, 'fixtures/example-app');
@@ -25,7 +32,7 @@ describe('nestparser CLI', () => {
 
     const cliJson = JSON.parse(readFileSync(out, 'utf-8'));
     const { config } = await loadConfig({ projectRoot: FIXTURE });
-    const libDoc = parseNestProject({ projectRoot: FIXTURE, config });
+    const libDoc = await parseNestProject({ projectRoot: FIXTURE, config });
 
     expect(cliJson).toEqual(libDoc);
   });
@@ -43,6 +50,17 @@ describe('nestparser CLI', () => {
     expect(result.stdout).toContain('--out');
     expect(result.stdout).toContain('--config');
     expect(result.stdout).toContain('--scope');
+  });
+
+  it('self-validates the generated document (exits cleanly on the valid fixture)', () => {
+    mkdirSync(TMP, { recursive: true });
+    const out = path.join(TMP, 'cli-validate.json');
+
+    // parseNestProject validates its output and throws on an invalid document, so
+    // a zero exit on the real fixture proves the generated spec is valid OpenAPI.
+    const result = runCli(['--project', FIXTURE, '--out', out]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Wrote');
   });
 
   it('--scope admin emits the AdminController and AdminMeta schema', () => {

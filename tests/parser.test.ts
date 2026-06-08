@@ -6,6 +6,13 @@ import { AstIndex, SchemaBuilder, loadConfig, parseNestProject } from '../src/li
 import type { ModelConstructor, NestParserConfig } from '../src/lib';
 import type { OpenApiDocument } from '../src/types/openapi';
 
+// parseNestProject self-validates via a native dynamic import of an ESM-only
+// package that vitest's VM can't host. Stub it for these in-process tests; the
+// real validation runs in a real Node process via the CLI tests (cli.test.ts).
+vi.mock('../src/validate', () => ({
+  validateDocument: async () => ({ valid: true, errors: [] }),
+}));
+
 const FIXTURE = path.resolve(__dirname, 'fixtures/example-app');
 
 async function loadFixtureConfig(): Promise<NestParserConfig> {
@@ -196,12 +203,12 @@ describe('parseNestProject (library API)', () => {
     it('throws when an additionalModels entry is not in the source tree', async () => {
       class NotInProject {}
       const config = await loadFixtureConfig();
-      expect(() =>
+      await expect(
         parseNestProject({
           projectRoot: FIXTURE,
           config: { ...config, additionalModels: [NotInProject as ModelConstructor] },
         }),
-      ).toThrow(/NotInProject/);
+      ).rejects.toThrow(/NotInProject/);
     });
   });
 });
@@ -312,7 +319,7 @@ describe('path parameters from the route template', () => {
     );
 
   // Build a throwaway controller and run the full pipeline over it.
-  function buildCatsDoc(): OpenApiDocument {
+  async function buildCatsDoc(): Promise<OpenApiDocument> {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-pathparam-')));
     try {
       fs.mkdirSync(path.join(tmp, 'src'));
@@ -369,30 +376,30 @@ describe('path parameters from the route template', () => {
     }
   }
 
-  it('synthesizes a string path param when the route declares one but no @Param binds it', () => {
-    const doc = buildCatsDoc();
+  it('synthesizes a string path param when the route declares one but no @Param binds it', async () => {
+    const doc = await buildCatsDoc();
     expect(paramsOf(doc, '/cats/{id}')).toEqual([
       { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
     ]);
   });
 
-  it('emits every placeholder, in template order, for multi-param routes', () => {
-    const doc = buildCatsDoc();
+  it('emits every placeholder, in template order, for multi-param routes', async () => {
+    const doc = await buildCatsDoc();
     expect(paramsOf(doc, '/cats/{from}/{to}')).toEqual([
       { name: 'from', in: 'path', required: true, schema: { type: 'string' } },
       { name: 'to', in: 'path', required: true, schema: { type: 'string' } },
     ]);
   });
 
-  it('uses the explicit @Param schema when its name matches the template', () => {
-    const doc = buildCatsDoc();
+  it('uses the explicit @Param schema when its name matches the template', async () => {
+    const doc = await buildCatsDoc();
     expect(paramsOf(doc, '/cats/named/{slug}')).toEqual([
       { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
     ]);
   });
 
-  it('ignores a @Param whose name is absent from the template, still emitting the placeholder', () => {
-    const doc = buildCatsDoc();
+  it('ignores a @Param whose name is absent from the template, still emitting the placeholder', async () => {
+    const doc = await buildCatsDoc();
     const params = paramsOf(doc, '/cats/{id}/detail');
     expect(params.map((p) => p.name)).toEqual(['id']);
     expect(params[0].schema).toEqual({ type: 'string' });
@@ -465,7 +472,7 @@ describe('response status (@HttpCode)', () => {
   const statusOf = (doc: OpenApiDocument, path: string, method: 'get' | 'post' | 'delete') =>
     Object.keys((doc.paths[path]?.[method] as { responses: Record<string, unknown> }).responses)[0];
 
-  function buildThingsDoc(): OpenApiDocument {
+  async function buildThingsDoc(): Promise<OpenApiDocument> {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-httpcode-')));
     try {
       fs.mkdirSync(path.join(tmp, 'src'));
@@ -527,18 +534,18 @@ describe('response status (@HttpCode)', () => {
     }
   }
 
-  it('defaults to 201 for POST and 200 for other verbs when no @HttpCode', () => {
-    const doc = buildThingsDoc();
+  it('defaults to 201 for POST and 200 for other verbs when no @HttpCode', async () => {
+    const doc = await buildThingsDoc();
     expect(statusOf(doc, '/things/default', 'post')).toBe('201');
     expect(statusOf(doc, '/things/ok', 'get')).toBe('200');
   });
 
-  it('honors a numeric @HttpCode literal', () => {
-    expect(statusOf(buildThingsDoc(), '/things/no-content', 'post')).toBe('204');
+  it('honors a numeric @HttpCode literal', async () => {
+    expect(statusOf(await buildThingsDoc(), '/things/no-content', 'post')).toBe('204');
   });
 
-  it('resolves an @HttpCode(HttpStatus.MEMBER) reference', () => {
-    const doc = buildThingsDoc();
+  it('resolves an @HttpCode(HttpStatus.MEMBER) reference', async () => {
+    const doc = await buildThingsDoc();
     expect(statusOf(doc, '/things/accepted', 'post')).toBe('202');
     expect(statusOf(doc, '/things/gone', 'delete')).toBe('204');
   });
@@ -549,7 +556,7 @@ describe('array route paths', () => {
   const getOp = (doc: OpenApiDocument, path: string): Op | undefined =>
     doc.paths[path]?.get as Op | undefined;
 
-  function buildDoc(): OpenApiDocument {
+  async function buildDoc(): Promise<OpenApiDocument> {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-arraypath-')));
     try {
       fs.mkdirSync(path.join(tmp, 'src'));
@@ -605,8 +612,8 @@ describe('array route paths', () => {
     }
   }
 
-  it('emits one operation per entry in an array route, with unique operationIds', () => {
-    const doc = buildDoc();
+  it('emits one operation per entry in an array route, with unique operationIds', async () => {
+    const doc = await buildDoc();
     const a = getOp(doc, '/cats/a');
     const b = getOp(doc, '/cats/b');
     expect(a).toBeDefined();
@@ -614,8 +621,8 @@ describe('array route paths', () => {
     expect(a!.operationId).not.toBe(b!.operationId);
   });
 
-  it('computes path params per path — a placeholder entry vs a static alias', () => {
-    const doc = buildDoc();
+  it('computes path params per path — a placeholder entry vs a static alias', async () => {
+    const doc = await buildDoc();
     const byId = getOp(doc, '/cats/{id}');
     const all = getOp(doc, '/cats/all');
     expect(byId?.parameters?.map((p) => p.name)).toEqual(['id']);
@@ -623,14 +630,14 @@ describe('array route paths', () => {
     expect(all?.parameters ?? []).toEqual([]);
   });
 
-  it('expands an array @Controller prefix across every route', () => {
-    const doc = buildDoc();
+  it('expands an array @Controller prefix across every route', async () => {
+    const doc = await buildDoc();
     expect(getOp(doc, '/v1/admin/ping')).toBeDefined();
     expect(getOp(doc, '/v2/admin/ping')).toBeDefined();
   });
 
-  it('collapses duplicate entries in an array path', () => {
-    const doc = buildDoc();
+  it('collapses duplicate entries in an array path', async () => {
+    const doc = await buildDoc();
     expect(getOp(doc, '/cats/dup')).toBeDefined();
     // No spurious `_2` operation was created for the duplicate.
     expect(getOp(doc, '/cats/dup')!.operationId).toBe('Cats_dup');
@@ -641,7 +648,7 @@ describe('method-level @Tag declaration', () => {
   const opTags = (doc: OpenApiDocument, path: string): string[] =>
     (doc.paths[path]?.get as { tags: string[] }).tags;
 
-  function buildDoc(): OpenApiDocument {
+  async function buildDoc(): Promise<OpenApiDocument> {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-tag-')));
     try {
       fs.mkdirSync(path.join(tmp, 'src'));
@@ -708,21 +715,21 @@ describe('method-level @Tag declaration', () => {
     }
   }
 
-  it('routes operations to their method-level tag', () => {
-    const doc = buildDoc();
+  it('routes operations to their method-level tag', async () => {
+    const doc = await buildDoc();
     expect(opTags(doc, '/catalog/list')).toEqual(['Catalog']);
     expect(opTags(doc, '/catalog/ping')).toEqual(['Diagnostics']);
     expect(opTags(doc, '/catalog/export')).toEqual(['Reports']);
   });
 
-  it('declares a novel method tag in root tags[], after controller tags, with no description', () => {
-    const doc = buildDoc();
+  it('declares a novel method tag in root tags[], after controller tags, with no description', async () => {
+    const doc = await buildDoc();
     expect(doc.tags?.map((t) => t.name)).toEqual(['Catalog', 'Reports', 'Diagnostics']);
     expect(doc.tags?.find((t) => t.name === 'Diagnostics')).toEqual({ name: 'Diagnostics' });
   });
 
-  it("a controller's description wins over a same-named method-tag placeholder", () => {
-    const doc = buildDoc();
+  it("a controller's description wins over a same-named method-tag placeholder", async () => {
+    const doc = await buildDoc();
     // `@Tag Reports` appears on a CatalogController method AND as ReportsController's
     // tag — the controller's description must survive.
     expect(doc.tags?.find((t) => t.name === 'Reports')?.description).toBe('Reporting operations.');
@@ -735,7 +742,7 @@ describe('optional & unsupported route patterns', () => {
   const getOp = (doc: OpenApiDocument, p: string): Op | undefined =>
     doc.paths[p]?.get as Op | undefined;
 
-  function build(): { doc: OpenApiDocument; warnings: string[] } {
+  async function build(): Promise<{ doc: OpenApiDocument; warnings: string[] }> {
     const warnings: string[] = [];
     const spy = vi.spyOn(console, 'warn').mockImplementation((msg?: unknown) => {
       warnings.push(String(msg));
@@ -786,7 +793,7 @@ describe('optional & unsupported route patterns', () => {
         ].join('\n'),
       );
 
-      const doc = parseNestProject({
+      const doc = await parseNestProject({
         projectRoot: tmp,
         config: {
           openapi: { title: 'Users', version: '1.0.0' },
@@ -800,8 +807,8 @@ describe('optional & unsupported route patterns', () => {
     }
   }
 
-  it('splits a trailing optional param into a with/without pair', () => {
-    const { doc } = build();
+  it('splits a trailing optional param into a with/without pair', async () => {
+    const { doc } = await build();
     expect(getOp(doc, '/users')).toBeDefined();
     expect(getOp(doc, '/users/{id}')).toBeDefined();
     expect(getOp(doc, '/users')!.parameters ?? []).toEqual([]);
@@ -810,14 +817,14 @@ describe('optional & unsupported route patterns', () => {
     expect(getOp(doc, '/users')!.operationId).not.toBe(getOp(doc, '/users/{id}')!.operationId);
   });
 
-  it('splits an optional param in the middle of the route', () => {
-    const { doc } = build();
+  it('splits an optional param in the middle of the route', async () => {
+    const { doc } = await build();
     expect(getOp(doc, '/users/a/b')).toBeDefined();
     expect(getOp(doc, '/users/a/{x}/b')).toBeDefined();
   });
 
-  it('skips regex, wildcard, and multi-optional routes, keeping plain ones', () => {
-    const { doc } = build();
+  it('skips regex, wildcard, and multi-optional routes, keeping plain ones', async () => {
+    const { doc } = await build();
     expect(getOp(doc, '/users/num/{id}')).toBeUndefined();
     expect(Object.keys(doc.paths).some((p) => p.includes('files'))).toBe(false);
     expect(getOp(doc, '/users/{a}')).toBeUndefined();
@@ -826,8 +833,8 @@ describe('optional & unsupported route patterns', () => {
     expect(getOp(doc, '/users/ok')).toBeDefined();
   });
 
-  it('logs a warning naming each skipped route', () => {
-    const { warnings } = build();
+  it('logs a warning naming each skipped route', async () => {
+    const { warnings } = await build();
     expect(warnings.some((w) => w.includes('num/:id') && /unsupported/.test(w))).toBe(true);
     expect(warnings.some((w) => w.includes('files/*') && /unsupported/.test(w))).toBe(true);
     expect(warnings.some((w) => w.includes(':a?/:b?') && /optional/.test(w))).toBe(true);
@@ -987,5 +994,47 @@ describe('class-validator constraint mapping', () => {
     expect(p.pos).toEqual({ type: 'number', minimum: 0, exclusiveMinimum: true });
     expect(p.neg).toEqual({ type: 'number', maximum: 0, exclusiveMaximum: true });
     expect(p.floor).toEqual({ type: 'number', minimum: -5 });
+  });
+});
+
+describe('config validation', () => {
+  function writeJsonConfig(openapi: unknown): string {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-cfg-')));
+    fs.writeFileSync(path.join(tmp, 'nestparser.config.json'), JSON.stringify({ openapi }));
+    return tmp;
+  }
+
+  it('rejects a config whose openapi.title is missing or blank', async () => {
+    for (const openapi of [{ version: '1.0.0' }, { title: '   ', version: '1.0.0' }]) {
+      const tmp = writeJsonConfig(openapi);
+      try {
+        await expect(loadConfig({ projectRoot: tmp })).rejects.toThrow(
+          /openapi\.title.*non-empty string/,
+        );
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('rejects a config whose openapi.version is missing', async () => {
+    const tmp = writeJsonConfig({ title: 'X' });
+    try {
+      await expect(loadConfig({ projectRoot: tmp })).rejects.toThrow(
+        /openapi\.version.*non-empty string/,
+      );
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a valid minimal config', async () => {
+    const tmp = writeJsonConfig({ title: 'X', version: '1.0.0' });
+    try {
+      const { config } = await loadConfig({ projectRoot: tmp });
+      expect(config.openapi).toEqual({ title: 'X', version: '1.0.0' });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
