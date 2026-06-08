@@ -7,8 +7,8 @@ Ships a CLI (`nestparser`) and a programmatic API.
 ## Why
 
 `@nestjs/swagger` is excellent but requires booting the application and sprinkling `@Api*` decorators everywhere.
-`nestjs-openapi-parser` takes a different trade-off: it reads your existing code (controllers, DTOs, entities, JSDoc) and 
-produces a spec without running anything. That makes it cheap to plug into CI 
+`nestjs-openapi-parser` takes a different trade-off: it reads your existing code (controllers, DTOs, entities, JSDoc) and
+produces a spec without running anything. That makes it cheap to plug into CI
 and ergonomic when your codebase already follows clear conventions (TypeORM entities, `class-validator` DTOs, JSDoc descriptions).
 
 ### Features
@@ -64,7 +64,7 @@ import { defineConfig } from 'nestjs-openapi-parser';
 
 export default defineConfig({
   openapi: {
-    title: 'My API', // Default to `package.json` name 
+    title: 'My API', // Default to `package.json` name
     version: '1.0.0', // Default to `package.json` version
     servers: [{ url: 'http://localhost:3000' }],
     securitySchemes: {
@@ -122,7 +122,6 @@ nestparser.config.json
 `.ts` / `.mts` / `.cts` files are loaded via [`tsx`](https://github.com/privatenumber/tsx) (registered lazily — JSON-only users don't pay for it). Use `--config <path>` to point at an explicit file.
 
 **Config is optional.** If auto-discovery finds nothing, the parser emits a warning and falls back to a default config — `openapi.title`/`version` come from the project's `package.json` (`name`/`version`), with everything else on engine defaults (`rootDir: src`, `tsConfigFilePath: tsconfig.json`, no hooks). This lets you run against a vanilla NestJS project with zero setup.
-
 
 ## Library usage
 

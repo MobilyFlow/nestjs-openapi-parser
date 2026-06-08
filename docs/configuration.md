@@ -28,12 +28,12 @@ export default defineConfig({
   },
 
   conventions: {
-    excludeDecorator: 'Exclude',    // class-transformer @Exclude
+    excludeDecorator: 'Exclude', // class-transformer @Exclude
     optionalDecorator: 'IsOptional', // class-validator @IsOptional
   },
 
-  scopes: [],                        // see "Documentation variants" below
-  additionalModels: [],              // force-include unreachable models — see docs/parser.md
+  scopes: [], // see "Documentation variants" below
+  additionalModels: [], // force-include unreachable models — see docs/parser.md
 
   hooks: {
     // see "Hooks"
@@ -117,10 +117,18 @@ Default behavior emits "vanilla NestJS" output: the method return type is the re
 defineConfig({
   // ...
   hooks: {
-    buildResponseSchema: (ctx) => { /* ... */ },
-    resolveSecurity:    (ctx) => { /* ... */ },
-    controllerTag:      (clazz) => { /* ... */ },
-    endpointSummary:    (ctx) => { /* ... */ },
+    buildResponseSchema: (ctx) => {
+      /* ... */
+    },
+    resolveSecurity: (ctx) => {
+      /* ... */
+    },
+    controllerTag: (clazz) => {
+      /* ... */
+    },
+    endpointSummary: (ctx) => {
+      /* ... */
+    },
   },
 });
 ```
@@ -136,7 +144,7 @@ buildResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
       type: 'object',
       properties: {
         success: { type: 'boolean' },
-        data:    { type: 'array', items: { type: 'object' } },
+        data: { type: 'array', items: { type: 'object' } },
         pagination: { type: 'object', properties: { total: { type: 'integer' } } },
       },
       required: ['success', 'data', 'pagination'],
@@ -147,7 +155,7 @@ buildResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
     properties: { success: { type: 'boolean' }, data: defaultSchema() },
     required: ['success', 'data'],
   };
-}
+};
 ```
 
 `ctx.defaultSchema()` lazily computes the bare return-type schema — calling it registers a `$ref` if the return type is a class. Don't call it if you're replacing the body entirely (otherwise you'll pull schemas you don't reference).
@@ -160,7 +168,7 @@ Read your own auth decorator (e.g. `@Public()`, `@Auth(...)`) and produce securi
 resolveSecurity: ({ controller, method }) => {
   const isPublic = !!method.getDecorator('Public') || !!controller.getDecorator('Public');
   return isPublic ? [] : [{ bearerAuth: [] }];
-}
+};
 ```
 
 Return:

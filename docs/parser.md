@@ -7,7 +7,7 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 ## Routes
 
 | Source                                                | Becomes                                                                                                      |
-|-------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `@Controller('users')`                                | base path + default tag derived from the class name (see below)                                              |
 | `@Get/@Post/@Put/@Delete/@Patch('path')`              | OpenAPI operation under `paths[fullPath][httpMethod]`                                                        |
 | `@Get(['a', 'b'])` / `@Controller(['x', 'y'])` arrays | one operation per path (full prefix × route cross-product), unique operationIds                              |
@@ -21,7 +21,6 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 | `@Scope <name>` JSDoc tag (controller or method)      | emitted only when that scope is active — see [Configuration](configuration.md#documentation-variants--scope) |
 | `@Name <text>` JSDoc tag (method)                     | overrides the operation `summary`                                                                            |
 
-
 ```ts
 /**
  * @Tag System Health
@@ -30,7 +29,9 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 export class HealthController {
   @Get()
   /** @Tag Diagnostics */
-  ping() { /* ... */ }
+  ping() {
+    /* ... */
+  }
 }
 ```
 
@@ -43,10 +44,14 @@ Every tag in play is also declared in the document's root `tags[]`. Controller t
 export class PostsController {
   /** @Name Publish a post */
   @Post()
-  create() { /* ... */ }   // summary: "Publish a post"
+  create() {
+    // summary: "Publish a post"
+  }
 
   @Get(':id')
-  findOne() { /* ... */ }   // summary: "Find One"
+  findOne() {
+    // summary: "Publish a post"
+  }
 }
 ```
 
@@ -54,16 +59,16 @@ HTTP-method decorators (and `@Controller`, `@Body`, `@Query`, `@Param`, `@Header
 
 ## Parameters & request body
 
-| Source                                       | Becomes                                                      |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| `@Param('id')`                               | path parameter (`required: true`)                            |
-| `@Param('id', ParseUUIDPipe)`                | `{ type: 'string', format: 'uuid' }`                         |
-| `@Param('id', ParseIntPipe)`                 | `{ type: 'integer' }`                                        |
-| `@Param('id', ParseBoolPipe)`                | `{ type: 'boolean' }`                                        |
-| `@Query('q')`                                | named query parameter                                        |
-| `@Query() dto: SomeQueryDto`                 | expanded into individual query parameters from the DTO       |
-| `@Body() dto: SomeBodyDto`                   | `requestBody` with `application/json` schema (`required: true`) |
-| `@Headers('x-foo')`                          | header parameter (`type: string`)                            |
+| Source                        | Becomes                                                         |
+| ----------------------------- | --------------------------------------------------------------- |
+| `@Param('id')`                | path parameter (`required: true`)                               |
+| `@Param('id', ParseUUIDPipe)` | `{ type: 'string', format: 'uuid' }`                            |
+| `@Param('id', ParseIntPipe)`  | `{ type: 'integer' }`                                           |
+| `@Param('id', ParseBoolPipe)` | `{ type: 'boolean' }`                                           |
+| `@Query('q')`                 | named query parameter                                           |
+| `@Query() dto: SomeQueryDto`  | expanded into individual query parameters from the DTO          |
+| `@Body() dto: SomeBodyDto`    | `requestBody` with `application/json` schema (`required: true`) |
+| `@Headers('x-foo')`           | header parameter (`type: string`)                               |
 
 Pipe detection is **textual** — it looks for `ParseUUIDPipe` / `ParseIntPipe` / `ParseBoolPipe` in the decorator's arguments source. Custom pipes fall back to the parameter's TypeScript type.
 
@@ -79,24 +84,24 @@ The default is "method return type **is** the response body" with status `201` f
 
 The schema builder accepts TypeScript classes and produces OpenAPI object schemas:
 
-| Source                                                | Becomes                                                                 |
-| ----------------------------------------------------- | ----------------------------------------------------------------------- |
-| Class instance property                               | entry in `properties`                                                   |
-| `prop?: T` **or** `@IsOptional() prop: T`             | excluded from `required` (decorator name configurable)                  |
-| `@Exclude() prop: T`                                  | omitted from the schema entirely (decorator name configurable)          |
-| `string` / `number` / `boolean` types                 | OpenAPI primitive                                                       |
-| `Date`                                                | `{ type: 'string', format: 'date-time' }`                               |
-| `T[]`                                                 | `{ type: 'array', items: schemaOf(T) }`                                 |
-| TypeScript `enum`                                     | `{ type, enum: [...] }` — `type` is `string`, `integer`, or `number` by member value |
-| `"a" \| "b" \| "c"` string-literal union              | `{ type: 'string', enum: ['a','b','c'] }`                               |
-| Union of classes                                      | `{ oneOf: [...] }`                                                      |
-| `extends PartialType(X)`                              | all properties of `X` made optional                                     |
-| `extends PickType(X, ['a','b'])`                      | subset                                                                  |
-| `extends OmitType(X, ['a','b'])`                      | complement                                                              |
-| `extends IntersectionType(A, B, ...)`                 | merged                                                                  |
-| Class JSDoc                                           | `schema.description`                                                    |
-| Property JSDoc                                        | property-level `description`                                            |
-| Property JSDoc on a **class-typed** property          | `{ allOf: [{ $ref }], description }` (see below)                        |
+| Source                                       | Becomes                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Class instance property                      | entry in `properties`                                                                |
+| `prop?: T` **or** `@IsOptional() prop: T`    | excluded from `required` (decorator name configurable)                               |
+| `@Exclude() prop: T`                         | omitted from the schema entirely (decorator name configurable)                       |
+| `string` / `number` / `boolean` types        | OpenAPI primitive                                                                    |
+| `Date`                                       | `{ type: 'string', format: 'date-time' }`                                            |
+| `T[]`                                        | `{ type: 'array', items: schemaOf(T) }`                                              |
+| TypeScript `enum`                            | `{ type, enum: [...] }` — `type` is `string`, `integer`, or `number` by member value |
+| `"a" \| "b" \| "c"` string-literal union     | `{ type: 'string', enum: ['a','b','c'] }`                                            |
+| Union of classes                             | `{ oneOf: [...] }`                                                                   |
+| `extends PartialType(X)`                     | all properties of `X` made optional                                                  |
+| `extends PickType(X, ['a','b'])`             | subset                                                                               |
+| `extends OmitType(X, ['a','b'])`             | complement                                                                           |
+| `extends IntersectionType(A, B, ...)`        | merged                                                                               |
+| Class JSDoc                                  | `schema.description`                                                                 |
+| Property JSDoc                               | property-level `description`                                                         |
+| Property JSDoc on a **class-typed** property | `{ allOf: [{ $ref }], description }` (see below)                                     |
 
 A `$ref` is an OpenAPI 3.0 Reference Object whose sibling keys are ignored, so a class-typed property that also carries a JSDoc description is emitted as `{ allOf: [{ $ref }], description }` rather than `{ $ref, description }` — otherwise the description would be silently dropped by tooling. Class-typed properties without a description stay a bare `{ $ref }`.
 
@@ -104,19 +109,19 @@ A `$ref` is an OpenAPI 3.0 Reference Object whose sibling keys are ignored, so a
 
 Constraint decorators on a property are translated into the matching schema keywords (unknown decorators are ignored). These compose with the type-derived schema and propagate through `PartialType`/`PickType`/`OmitType`/`IntersectionType`:
 
-| Decorator                         | Schema keyword(s)                          |
-| --------------------------------- | ------------------------------------------ |
-| `@Min(n)` / `@Max(n)`             | `minimum` / `maximum`                      |
-| `@MinLength(n)` / `@MaxLength(n)` | `minLength` / `maxLength`                  |
-| `@Length(min, max)`               | `minLength` + `maxLength`                  |
-| `@ArrayMinSize(n)` / `@ArrayMaxSize(n)` | `minItems` / `maxItems`              |
-| `@IsEmail()`                      | `format: 'email'`                          |
-| `@IsUrl()`                        | `format: 'uri'`                            |
-| `@IsUUID()`                       | `format: 'uuid'`                           |
-| `@IsDateString()`                 | `format: 'date-time'`                      |
-| `@Matches(/re/)`                  | `pattern` (regex literal or string)        |
-| `@IsInt()`                        | narrows `number` → `integer`               |
-| `@IsPositive()` / `@IsNegative()` | exclusive `minimum` / `maximum` of `0`     |
+| Decorator                               | Schema keyword(s)                      |
+| --------------------------------------- | -------------------------------------- |
+| `@Min(n)` / `@Max(n)`                   | `minimum` / `maximum`                  |
+| `@MinLength(n)` / `@MaxLength(n)`       | `minLength` / `maxLength`              |
+| `@Length(min, max)`                     | `minLength` + `maxLength`              |
+| `@ArrayMinSize(n)` / `@ArrayMaxSize(n)` | `minItems` / `maxItems`                |
+| `@IsEmail()`                            | `format: 'email'`                      |
+| `@IsUrl()`                              | `format: 'uri'`                        |
+| `@IsUUID()`                             | `format: 'uuid'`                       |
+| `@IsDateString()`                       | `format: 'date-time'`                  |
+| `@Matches(/re/)`                        | `pattern` (regex literal or string)    |
+| `@IsInt()`                              | narrows `number` → `integer`           |
+| `@IsPositive()` / `@IsNegative()`       | exclusive `minimum` / `maximum` of `0` |
 
 So `@IsInt() @Min(1) @Max(100) limit: number` becomes `{ type: 'integer', minimum: 1, maximum: 100 }`, and `@IsEmail() email: string` becomes `{ type: 'string', format: 'email' }`. Like everything else, decorators are matched by **local identifier name**.
 
