@@ -6,20 +6,20 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 
 ## Routes
 
-| Source                                                | Becomes                                                                                 |
-|-------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| `@Controller('users')`                                | base path + default tag derived from the class name (see below)                         |
-| `@Get/@Post/@Put/@Delete/@Patch('path')`              | OpenAPI operation under `paths[fullPath][httpMethod]`                                   |
-| `@Get(['a', 'b'])` / `@Controller(['x', 'y'])` arrays | one operation per path (full prefix × route cross-product), unique operationIds         |
-| `:id` route placeholders                              | rewritten to `{id}` in the OpenAPI path                                                 |
-| `:id?` optional param                                 | split into two paths — without the segment and with `{id}` (params are always required) |
-| `:id(\d+)` regex / `*` wildcard / `:x+` modifier      | **route skipped** with a warning — no faithful OpenAPI representation                   |
-| Method's JSDoc                                        | `operation.description`                                                                 |
-| Controller class JSDoc                                | `tags[].description`                                                                    |
-| Method name → `operation.summary`                     | humanized method name by default                                                        |
-| `@Tag <name>` JSDoc tag (controller or method)        | overrides the derived tag for that controller / operation                               |
-| `@Scope <name>` JSDoc tag (controller or method)      | overrides the derived tag for that controller / operation                               |
-| `@Name <text>` JSDoc tag (method)                     | overrides the operation `summary`                                                       |
+| Source                                                | Becomes                                                                                                      |
+|-------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| `@Controller('users')`                                | base path + default tag derived from the class name (see below)                                              |
+| `@Get/@Post/@Put/@Delete/@Patch('path')`              | OpenAPI operation under `paths[fullPath][httpMethod]`                                                        |
+| `@Get(['a', 'b'])` / `@Controller(['x', 'y'])` arrays | one operation per path (full prefix × route cross-product), unique operationIds                              |
+| `:id` route placeholders                              | rewritten to `{id}` in the OpenAPI path                                                                      |
+| `:id?` optional param                                 | split into two paths — without the segment and with `{id}` (params are always required)                      |
+| `:id(\d+)` regex / `*` wildcard / `:x+` modifier      | **route skipped** with a warning — no faithful OpenAPI representation                                        |
+| Method's JSDoc                                        | `operation.description`                                                                                      |
+| Controller class JSDoc                                | `tags[].description`                                                                                         |
+| Method name → `operation.summary`                     | humanized method name by default                                                                             |
+| `@Tag <name>` JSDoc tag (controller or method)        | overrides the derived tag for that controller / operation                                                    |
+| `@Scope <name>` JSDoc tag (controller or method)      | emitted only when that scope is active — see [Configuration](configuration.md#documentation-variants--scope) |
+| `@Name <text>` JSDoc tag (method)                     | overrides the operation `summary`                                                                            |
 
 
 ```ts
@@ -36,7 +36,7 @@ export class HealthController {
 
 Every tag in play is also declared in the document's root `tags[]`. Controller tags come first (with the description from the class JSDoc, first controller winning on a shared name), followed by any method-level `@Tag` name no controller already declared. Those method-introduced tags carry no description — a method's JSDoc is its `operation.description`, not a tag description — but they're still declared so the operation's tag isn't dangling and tools order/group it like any other.
 
-**Operation summary.** Every operation gets a `summary`. By default it's the **method name humanized** — camelCase/PascalCase split into words with the first letter capitalized (`findOne` → `"Find One"`, `remove` → `"Remove"`). Override it per-endpoint with a `@Name <text>` JSDoc tag on the method (single line, like `@Tag`), or globally with the [`endpointSummary`](#hooks-project-specific-glue) hook. Precedence: **`@Name` > `endpointSummary` hook > default**; the hook returning `null`/`undefined` falls back to the default.
+**Operation summary.** Every operation gets a `summary`. By default it's the **method name humanized** — camelCase/PascalCase split into words with the first letter capitalized (`findOne` → `"Find One"`, `remove` → `"Remove"`). Override it per-endpoint with a `@Name <text>` JSDoc tag on the method (single line, like `@Tag`), or globally with the [`endpointSummary`](configuration.md#hooks-project-specific-glue) hook. Precedence: **`@Name` > `endpointSummary` hook > default**; the hook returning `null`/`undefined` falls back to the default.
 
 ```ts
 @Controller('posts')
@@ -71,7 +71,7 @@ Pipe detection is **textual** — it looks for `ParseUUIDPipe` / `ParseIntPipe` 
 
 ## Responses
 
-The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize the body with the [`buildResponseSchema`](#hooks-project-specific-glue) hook.
+The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize the body with the [`buildResponseSchema`](configuration.md#hooks-project-specific-glue) hook.
 
 **`@HttpCode(...)` overrides the status.** A handler decorated with `@HttpCode(204)` (numeric literal) or `@HttpCode(HttpStatus.NO_CONTENT)` (the `HttpStatus` member is resolved from a built-in name→code table) uses that code as the response key instead of the 201/200 default — matching NestJS's own behavior.
 

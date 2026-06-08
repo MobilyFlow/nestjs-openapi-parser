@@ -32,8 +32,8 @@ export default defineConfig({
     optionalDecorator: 'IsOptional', // class-validator @IsOptional
   },
 
-  scopes: [],                        // see "Documentation variants"
-  additionalModels: [],              // see "Schema reachability"
+  scopes: [],                        // see "Documentation variants" below
+  additionalModels: [],              // force-include unreachable models — see docs/parser.md
 
   hooks: {
     // see "Hooks"
@@ -67,6 +67,8 @@ export class User {
 }
 ```
 
+**Activate scopes** via the CLI or the config:
+
 ```sh
 nestparser --scope internal,admin            # comma-separated
 nestparser --scope internal --scope admin    # repeatable
@@ -80,9 +82,8 @@ defineConfig({
 ```
 
 - **Syntax.** The tag must be on its own JSDoc line. Inline mentions like `Comment with @Scope foo` are treated as description text. Multiple values can be comma-separated (`@Scope internal,admin`) or on separate lines.
-- **Activate scopes.** Either via the CLI or the config:
+- **Precedence.** The CLI `--scope` flag overrides `config.scopes` when present.
 - **Soundness — no dangling refs.** If a visible item references a class whose scope wouldn't be emitted, the build fails fast with an error naming the offending class. Example: a `@Scope internal` method returns `Promise<AdminMeta>` where `AdminMeta` is `@Scope admin`; building with `--scope internal` alone throws. Building with `--scope internal,admin` succeeds.
-- The CLI flag overrides the config when present.
 
 ## Scoped description fragments
 
@@ -183,4 +184,4 @@ endpointSummary: ({ httpMethod, defaultSummary }) =>
   `${httpMethod.toUpperCase()} — ${defaultSummary}`;
 ```
 
-The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).
+The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](../tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).

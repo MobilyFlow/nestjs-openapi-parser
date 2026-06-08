@@ -35,6 +35,6 @@ const doc: OpenApiDocument = await parseNestProject({ projectRoot, config });
 const { valid, errors } = await validateDocument(doc);
 ```
 
-Public exports live in [`src/lib.ts`](src/lib.ts): `parseNestProject`, `loadConfig`, `defineConfig`, the scope helpers (`getTags`, `getScopes`, `isVisible`, `filterScopedComments`, `parseScopeList`), and the relevant TypeScript types.
+Public exports live in [`src/lib.ts`](../src/lib.ts): `parseNestProject`, `loadConfig`, `defineConfig`, the scope helpers (`getTags`, `getScopes`, `isVisible`, `filterScopedComments`, `parseScopeList`), and the relevant TypeScript types.
 
 The internal builders (`AstIndex`, `SchemaBuilder`, `PathBuilder`) are also exported if you need fine-grained control, but the stable surface is `parseNestProject` + `loadConfig`.
