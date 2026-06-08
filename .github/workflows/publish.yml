@@ -1,0 +1,75 @@
+name: Publish to npm
+
+# Publishes on every push to main, but only when package.json has a version
+# that isn't already on npm. After a successful publish, the commit is tagged
+# `v<version>`.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pkg.outputs.version }}
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read package version
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check if version is already published
+        id: check
+        run: |
+          if npm view "nestjs-openapi-parser@${{ steps.pkg.outputs.version }}" version > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version ${{ steps.pkg.outputs.version }} already on npm — skipping publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: check
+    if: needs.check.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version tag
+      id-token: write # npm Trusted Publishing (OIDC) + provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Enable Corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build
+        run: yarn build
+
+      - name: Test
+        run: yarn test
+
+      # Trusted Publishing needs a recent npm CLI (>= 11.5.1).
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        # Auth comes from the OIDC id-token above — no NODE_AUTH_TOKEN needed.
+
+      - name: Tag the release
+        run: |
+          version="v${{ needs.check.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$version"
+          git push origin "$version"

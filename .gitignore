@@ -24,6 +24,7 @@ tests/.tmp/
 # Env
 .env
 .env.local
+.envrc
 
 # OS
 .DS_Store
