@@ -148,6 +148,8 @@ You can also skip `loadConfig` entirely and pass the config object inline. Publi
 
 The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class and enum it sees, then emits paths and schemas from controllers and the types they reference.
 
+**Deterministic output.** The source tree is walked in name-sorted order (not raw `fs.readdirSync` order, which is filesystem-dependent), so the order of paths, tags and schemas is identical on every machine — the generated JSON is safe to commit and diff in CI. Fields inside a model keep their **source-declaration order**, with inherited fields first (base class → subclass) when a class `extends` another.
+
 ### Routes
 
 | Source                                                 | Becomes                                                                        |

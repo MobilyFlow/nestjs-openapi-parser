@@ -51,7 +51,15 @@ export class AstIndex {
 
   private generateMaps(folder: string, excludeSuffixes: string[]): void {
     if (!fs.existsSync(folder)) return;
-    for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+    // Sort entries by name so the traversal order — and therefore the order of
+    // paths, schemas and tags in the output — is identical across filesystems
+    // and platforms. `fs.readdirSync` order is not guaranteed (arbitrary on
+    // ext4/xfs), and `localeCompare` would reintroduce locale-dependent
+    // ordering, so compare raw strings by UTF-16 code unit.
+    const entries = fs
+      .readdirSync(folder, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
       const full = path.join(folder, entry.name);
       if (entry.isDirectory()) {
         this.generateMaps(full, excludeSuffixes);

@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadConfig, parseNestProject } from '../src/lib';
+import { AstIndex, SchemaBuilder, loadConfig, parseNestProject } from '../src/lib';
 import type { ModelConstructor, NestParserConfig } from '../src/lib';
 import type { OpenApiDocument } from '../src/types/openapi';
 
@@ -201,5 +203,103 @@ describe('parseNestProject (library API)', () => {
         }),
       ).toThrow(/NotInProject/);
     });
+  });
+});
+
+describe('output ordering', () => {
+  // The source tree is walked in name-sorted order (not raw fs.readdirSync
+  // order), so paths, tags and schemas come out identical on every platform.
+  // These hard-coded expectations are the cross-platform determinism contract:
+  // a developer on ext4 must produce exactly this order too.
+  it('emits paths, tags and schemas in a stable, filesystem-independent order', async () => {
+    const document = await buildFixtureDocument();
+    expect(Object.keys(document.paths)).toEqual([
+      '/api/auth/login',
+      '/api/health',
+      '/api/posts',
+      '/api/users',
+      '/api/users/{id}',
+    ]);
+    expect(document.tags?.map((t) => t.name)).toEqual(['Auth', 'System Health', 'Posts', 'Users']);
+    expect(Object.keys(document.components?.schemas ?? {})).toEqual([
+      'LoginDto',
+      'LoginResponseDto',
+      'HealthStatusDto',
+      'CreatePostDto',
+      'BlogPost',
+      'User',
+      'CreateUserDto',
+      'UpdateUserDto',
+    ]);
+  });
+
+  it('keeps model fields in their source-declaration order', async () => {
+    const document = await buildFixtureDocument();
+    const blogPost = document.components?.schemas?.BlogPost as {
+      properties: Record<string, unknown>;
+    };
+    expect(Object.keys(blogPost.properties)).toEqual([
+      'id',
+      'title',
+      'body',
+      'authorId',
+      'status',
+      'publishedAt',
+      'createdAt',
+      'updatedAt',
+    ]);
+  });
+
+  it('orders inherited fields parent-first, then own — each in source order', () => {
+    // The fixture has no real `extends` chain, so spin up a throwaway project.
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-order-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', strict: false },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'export class Base {',
+          '  alpha!: string;',
+          '  beta!: number;',
+          '}',
+          'export class Middle extends Base {',
+          '  gamma!: boolean;',
+          '}',
+          'export class Child extends Middle {',
+          '  delta!: string;',
+          '  epsilon?: number;',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      const index = new AstIndex({
+        projectRoot: tmp,
+        project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+      });
+      const child = index.getClass('Child');
+      expect(child).toBeDefined();
+
+      const members = new SchemaBuilder(index).buildMembers(child!);
+      // Grandparent (Base) → parent (Middle) → own (Child), declaration order within each.
+      expect(Object.keys(members.properties)).toEqual([
+        'alpha',
+        'beta',
+        'gamma',
+        'delta',
+        'epsilon',
+      ]);
+      // `epsilon?` is optional; the rest are required, in the same parent-first order.
+      expect(members.required).toEqual(['alpha', 'beta', 'gamma', 'delta']);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
