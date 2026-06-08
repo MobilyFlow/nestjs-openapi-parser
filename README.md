@@ -139,9 +139,50 @@ writeFileSync('openapi.json', JSON.stringify(document, null, 2));
 
 See more in [Library Usage](docs/library-usage.md).
 
-## How to use in NextJS
+## How to use in NestJS
 
-TODO
+Write plain NestJS — the parser reads your controllers and models as-is. No config and no
+extra decorators are required; JSDoc comments simply carry over as descriptions.
+
+```ts
+/** A registered user. */
+export class User {
+  id!: string; // → { type: 'string' }, required
+
+  /** Display name. */
+  name!: string; // property JSDoc → schema description
+
+  email?: string; // optional (`?`) → omitted from `required`
+}
+```
+
+```ts
+import { Controller, Delete, Get, Param } from '@nestjs/common';
+import { User } from './user.entity';
+
+/** Manage users. */ // class JSDoc → `Users` tag description
+@Controller('users')
+export class UsersController {
+  /** Fetch a single user by id. */ // method JSDoc → operation description
+  @Get(':id') // `:id` → required path param; summary "Find One"
+  findOne(@Param('id') id: string): Promise<User> {
+    // return type `User` → 200 response body + `User` schema
+  }
+
+  /**
+   * Permanently delete a user.
+   *
+   * @Scope admin   // emitted only when built with --scope admin
+   * @Tag Admin     // groups this operation under the `Admin` tag
+   * @Name Delete user // overrides the auto summary
+   */
+  @Delete(':id')
+  remove(@Param('id') id: string): Promise<void> {}
+}
+```
+
+Run `npx nestparser --out openapi.json` — that's it. See [What it parses](docs/parser.md) for
+every supported construct (DTOs, `class-validator` constraints, enums, `@Scope`, `@Tag`, hooks…).
 
 ## What it parses
 
