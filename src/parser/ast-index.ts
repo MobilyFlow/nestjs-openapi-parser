@@ -9,14 +9,13 @@ import {
   Type,
 } from 'ts-morph';
 import { DEFAULT_CONVENTIONS, DEFAULT_PROJECT } from '../config/defaults';
-import type { ConventionsConfig, NestParserHooks, ProjectConfig } from '../config/types';
+import type { ConventionsConfig, ProjectConfig } from '../config/types';
 import { getScopes, getTags } from './tags';
 
 export interface AstIndexOptions {
   projectRoot: string;
   project?: ProjectConfig;
   conventions?: ConventionsConfig;
-  hooks?: Pick<NestParserHooks, 'isDto'>;
 }
 
 /**
@@ -29,12 +28,10 @@ export class AstIndex {
   private readonly classesMap = new Map<string, ClassDeclaration>();
   private readonly enumsMap = new Map<string, EnumDeclaration>();
   private readonly conventions: Required<ConventionsConfig>;
-  private readonly isDtoHook: NestParserHooks['isDto'];
 
   constructor(options: AstIndexOptions) {
     const projectCfg = { ...DEFAULT_PROJECT, ...options.project };
     this.conventions = { ...DEFAULT_CONVENTIONS, ...options.conventions };
-    this.isDtoHook = options.hooks?.isDto;
 
     const tsConfigFilePath = path.isAbsolute(projectCfg.tsConfigFilePath)
       ? projectCfg.tsConfigFilePath
@@ -88,24 +85,8 @@ export class AstIndex {
     return this.classesMap.has(name);
   }
 
-  getEnum(name: string): EnumDeclaration | undefined {
-    return this.enumsMap.get(name);
-  }
-
   hasEnum(name: string): boolean {
     return this.enumsMap.has(name);
-  }
-
-  /** All classes carrying the configured entity decorator. */
-  getEntities(): ClassDeclaration[] {
-    const decoratorName = this.conventions.entityDecorator;
-    return [...this.classesMap.values()].filter((c) => !!c.getDecorator(decoratorName));
-  }
-
-  /** All DTO classes — default: file ends in `.dto.ts` or class name matches `/(DTO|Dto)$/`. */
-  getDtos(): ClassDeclaration[] {
-    const isDto = this.isDtoHook ?? defaultIsDto;
-    return [...this.classesMap.values()].filter((c) => isDto(c));
   }
 
   /** All classes decorated with `@Controller(...)`. */
@@ -133,17 +114,6 @@ export class AstIndex {
     return scopes;
   }
 
-  /** Walk a class + its real base classes, returning every instance property. */
-  getAllProperties(clazz: ClassDeclaration): ClassInstancePropertyTypes[] {
-    let properties: ClassInstancePropertyTypes[] = [];
-    let it: ClassDeclaration | undefined = clazz;
-    while (it) {
-      properties = [...it.getInstanceProperties(), ...properties];
-      it = it.getBaseClass();
-    }
-    return properties;
-  }
-
   /** Resolve the named enum's member values (string or numeric), or undefined if unknown. */
   getEnumValues(name: string): (string | number)[] | undefined {
     const e = this.enumsMap.get(name);
@@ -164,10 +134,4 @@ export class AstIndex {
   get excludeDecorator(): string {
     return this.conventions.excludeDecorator;
   }
-}
-
-function defaultIsDto(clazz: ClassDeclaration): boolean {
-  const fileName = clazz.getSourceFile().getBaseName();
-  const name = clazz.getName() ?? '';
-  return fileName.endsWith('.dto.ts') || /(DTO|Dto)$/.test(name);
 }

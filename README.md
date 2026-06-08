@@ -283,7 +283,6 @@ export default defineConfig({
   },
 
   conventions: {
-    entityDecorator: 'Entity',      // TypeORM @Entity
     excludeDecorator: 'Exclude',    // class-transformer @Exclude
     optionalDecorator: 'IsOptional', // class-validator @IsOptional
   },
@@ -310,7 +309,6 @@ export default defineConfig({
 | `project`     | `rootDir`           | `src`                               | Source tree scanned for classes/enums/controllers                    |
 | `project`     | `globalPrefix`      | `''`                                | Equivalent of `app.setGlobalPrefix(...)`                             |
 | `project`     | `excludeSuffixes`   | `['.spec.ts', '.test.ts', '.d.ts']` | Filenames matching any suffix are skipped during scan                |
-| `conventions` | `entityDecorator`   | `Entity` (TypeORM)                  | Decorator marking persisted entities                                 |
 | `conventions` | `excludeDecorator`  | `Exclude`                           | Decorator hiding a property from schemas                             |
 | `conventions` | `optionalDecorator` | `IsOptional`                        | Decorator marking a property as optional                             |
 | (top-level)   | `additionalModels`  | `[]`                                | Force-include classes the reachability walk misses                   |
@@ -401,7 +399,7 @@ Known limitation: a fragment scope used **only** in `<X>…</X>` blocks — neve
 
 ## Hooks (project-specific glue)
 
-Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Four hooks let you customize:
+Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Three hooks let you customize:
 
 ```ts
 defineConfig({
@@ -409,7 +407,6 @@ defineConfig({
   hooks: {
     buildResponseSchema: (ctx) => { /* ... */ },
     resolveSecurity:    (ctx) => { /* ... */ },
-    isDto:              (clazz) => { /* ... */ },
     controllerTag:      (clazz) => { /* ... */ },
   },
 });
@@ -459,11 +456,10 @@ Return:
 - `[{ scheme: [] }, ...]` — explicit requirements
 - `undefined` — fall back to the default (every registered scheme applies)
 
-### `isDto(class)` and `controllerTag(class)`
+### `controllerTag(class)`
 
-Override the default conventions:
+Override the default tag derivation:
 
-- `isDto` — default matches `*.dto.ts` filename **or** class name ending in `DTO`/`Dto`.
 - `controllerTag` — default strips the `Controller` suffix and splits PascalCase boundaries with spaces (`UserAuthController` → `"User Auth"`). For one-off overrides, prefer the `@Tag <name>` JSDoc tag on the controller (or method) — no hook needed.
 
 The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup with both hooks (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).

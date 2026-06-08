@@ -57,12 +57,6 @@ export interface NestParserHooks {
   resolveSecurity?: (ctx: SecurityContext) => OpenApiSecurityRequirement[] | undefined;
 
   /**
-   * Override the default DTO detection rule (`.dto.ts` filename or `DTO`/`Dto`
-   * class-name suffix).
-   */
-  isDto?: (clazz: ClassDeclaration) => boolean;
-
-  /**
    * Override the default tag derivation (strip `Controller` suffix from class name).
    */
   controllerTag?: (clazz: ClassDeclaration) => string;
@@ -102,8 +96,6 @@ export interface ProjectConfig {
 }
 
 export interface ConventionsConfig {
-  /** Decorator name marking a class as a persisted entity. Defaults to `Entity` (TypeORM). */
-  entityDecorator?: string;
   /** Decorator name marking a property as excluded from serialization. Defaults to `Exclude`. */
   excludeDecorator?: string;
   /** Decorator name marking a property as optional. Defaults to `IsOptional`. */

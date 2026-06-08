@@ -23,7 +23,6 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
     projectRoot,
     project: config.project,
     conventions: config.conventions,
-    hooks: { isDto: config.hooks?.isDto },
   });
 
   const activeScopes = new Set(config.scopes ?? []);

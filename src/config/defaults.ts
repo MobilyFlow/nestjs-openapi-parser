@@ -10,7 +10,6 @@ export const DEFAULT_PROJECT: Required<Omit<ProjectConfig, 'excludeSuffixes'>> &
 };
 
 export const DEFAULT_CONVENTIONS: Required<ConventionsConfig> = {
-  entityDecorator: 'Entity',
   excludeDecorator: 'Exclude',
   optionalDecorator: 'IsOptional',
 };
