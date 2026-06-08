@@ -14,6 +14,9 @@ export class PostsController {
     return Promise.resolve(new PaginatedResponse<BlogPost>());
   }
 
+  /**
+   * Create a post and return the created `<BlogPost>` with its generated `<id>`.
+   */
   @Post()
   create(@Body() _dto: CreatePostDto): Promise<BlogPost> {
     return Promise.resolve(new BlogPost());

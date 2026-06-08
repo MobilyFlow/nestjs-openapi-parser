@@ -83,7 +83,9 @@ export function parseScopeList(raw: string | string[] | undefined): string[] {
 }
 
 // Matches an element-style open or close tag: <name> or </name>. The name must
-// look like a scope identifier — letters/digits/underscore/hyphen, leading letter.
+// look like a scope identifier — letters/digits/underscore/hyphen, leading
+// letter. Whether a match is an actual scope fragment (vs. literal prose) is
+// decided downstream against the known-scope vocabulary.
 const FRAGMENT_TAG = /<\/?([A-Za-z][A-Za-z0-9_-]*)>/g;
 
 /**
@@ -97,15 +99,24 @@ const FRAGMENT_TAG = /<\/?([A-Za-z][A-Za-z0-9_-]*)>/g;
  *    to 2, and the result is trimmed.
  *  - Nested fragments, mismatched close tags, and unclosed open tags throw.
  *
+ * Only names that are *known scopes* are treated as fragment delimiters. Pass
+ * the project's scope vocabulary via `ctx.knownScopes`; any other angle-bracket
+ * token — generics in prose (`Array<string>`), placeholders (`<id>`, `<token>`),
+ * inline HTML (`<b>…</b>`) — passes through verbatim and never throws. When
+ * `ctx.knownScopes` is omitted, every `<name>` is treated as a fragment (legacy
+ * behavior, retained for direct callers and unit tests).
+ *
  * The optional `ctx.itemPath` (e.g. `"User.email"`) is included in the error
  * message so misconfigured comments are easy to locate.
  */
 export function filterScopedComments(
   text: string,
   activeScopes: Set<string>,
-  ctx: { itemPath?: string } = {},
+  ctx: { itemPath?: string; knownScopes?: Set<string> } = {},
 ): string {
   const where = ctx.itemPath ? ` at ${ctx.itemPath}` : '';
+  const known = ctx.knownScopes;
+  const isScopeTag = (name: string): boolean => known === undefined || known.has(name);
 
   let currentScope: string | undefined;
   let keep = true;
@@ -120,6 +131,13 @@ export function filterScopedComments(
 
     const name = m[1];
     const isClose = m[0].startsWith('</');
+
+    // Not a scope name — ordinary prose. Emit it verbatim (when we're keeping
+    // the surrounding text) and leave the fragment state untouched.
+    if (!isScopeTag(name)) {
+      if (keep) out += m[0];
+      continue;
+    }
 
     if (!isClose) {
       if (currentScope !== undefined) {

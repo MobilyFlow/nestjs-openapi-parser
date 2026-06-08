@@ -10,6 +10,7 @@ import {
 } from 'ts-morph';
 import { DEFAULT_CONVENTIONS, DEFAULT_PROJECT } from '../config/defaults';
 import type { ConventionsConfig, NestParserHooks, ProjectConfig } from '../config/types';
+import { getScopes, getTags } from './tags';
 
 export interface AstIndexOptions {
   projectRoot: string;
@@ -102,6 +103,26 @@ export class AstIndex {
   /** All classes decorated with `@Controller(...)`. */
   getControllers(): ClassDeclaration[] {
     return [...this.classesMap.values()].filter((c) => !!c.getDecorator('Controller'));
+  }
+
+  /**
+   * Every distinct `@Scope` value declared anywhere in the indexed source
+   * (classes, methods, properties). This is the scope *vocabulary* — used to
+   * tell genuine `<scope>…</scope>` description fragments apart from ordinary
+   * angle-bracket prose like `Array<string>` or `<id>`.
+   */
+  getDeclaredScopes(): Set<string> {
+    const scopes = new Set<string>();
+    for (const clazz of this.classesMap.values()) {
+      for (const s of getScopes(getTags(clazz))) scopes.add(s);
+      for (const method of clazz.getInstanceMethods()) {
+        for (const s of getScopes(getTags(method))) scopes.add(s);
+      }
+      for (const prop of clazz.getInstanceProperties()) {
+        for (const s of getScopes(getTags(prop))) scopes.add(s);
+      }
+    }
+    return scopes;
   }
 
   /** Walk a class + its real base classes, returning every instance property. */

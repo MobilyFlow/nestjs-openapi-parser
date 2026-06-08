@@ -25,6 +25,8 @@ export interface PathBuilderOptions {
   hooks?: NestParserHooks;
   registeredSchemes?: string[];
   activeScopes?: Set<string>;
+  /** Scope vocabulary used to recognize `<scope>…</scope>` description fragments. */
+  knownScopes?: Set<string>;
 }
 
 /**
@@ -40,6 +42,7 @@ export class PathBuilder {
   private readonly hooks: NestParserHooks;
   private readonly registeredSchemes: string[];
   private readonly activeScopes: Set<string>;
+  private readonly knownScopes: Set<string> | undefined;
 
   constructor(
     private readonly index: AstIndex,
@@ -50,6 +53,7 @@ export class PathBuilder {
     this.hooks = options.hooks ?? {};
     this.registeredSchemes = options.registeredSchemes ?? [];
     this.activeScopes = options.activeScopes ?? new Set();
+    this.knownScopes = options.knownScopes;
   }
 
   build(): Record<string, Record<string, unknown>> {
@@ -83,6 +87,7 @@ export class PathBuilder {
       const desc = rawDesc
         ? filterScopedComments(rawDesc, this.activeScopes, {
             itemPath: `${controller.getName() ?? '<anon>'} (tag)`,
+            knownScopes: this.knownScopes,
           })
         : undefined;
       this.tags.set(tag, desc || undefined);
@@ -121,6 +126,7 @@ export class PathBuilder {
     const desc = rawDesc
       ? filterScopedComments(rawDesc, this.activeScopes, {
           itemPath: `${controller.getName() ?? '<anon>'}.${method.getName()}`,
+          knownScopes: this.knownScopes,
         })
       : undefined;
     if (desc) operation.description = desc;
@@ -281,9 +287,7 @@ export class PathBuilder {
 
   private defaultTag(controller: ClassDeclaration): string {
     const base = (controller.getName() ?? 'Default').replace(/Controller$/, '');
-    return base
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+    return base.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
   }
 
   private uniqueOperationId(tag: string, methodName: string): string {

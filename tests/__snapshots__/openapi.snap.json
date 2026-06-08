@@ -199,6 +199,7 @@
         "tags": [
           "Posts"
         ],
+        "description": "Create a post and return the created `<BlogPost>` with its generated `<id>`.",
         "requestBody": {
           "required": true,
           "content": {

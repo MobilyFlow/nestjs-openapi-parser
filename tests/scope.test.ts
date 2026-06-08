@@ -185,6 +185,52 @@ describe('tag parsing helpers', () => {
     });
   });
 
+  describe('filterScopedComments with a knownScopes vocabulary', () => {
+    const known = new Set(['internal', 'admin']);
+
+    it('passes ordinary angle-bracket prose through verbatim (no throw)', () => {
+      const cases = [
+        'Returns the `<id>` of the created user.',
+        'A list of names, e.g. Array<string>.',
+        'Pass your <token> in the header.',
+        'Wrap in <b>bold</b> for emphasis.',
+      ];
+      for (const text of cases) {
+        expect(filterScopedComments(text, new Set(), { knownScopes: known })).toBe(text);
+      }
+    });
+
+    it('still filters fragments whose name is a known scope', () => {
+      const text = 'Lead. <internal>secret</internal> <admin>(admin)</admin>';
+      expect(filterScopedComments(text, new Set(['internal']), { knownScopes: known })).toBe(
+        'Lead. secret',
+      );
+      expect(filterScopedComments(text, new Set(), { knownScopes: known })).toBe('Lead.');
+    });
+
+    it('treats an unclosed non-scope tag as literal text instead of throwing', () => {
+      expect(filterScopedComments('Array<string> only', new Set(), { knownScopes: known })).toBe(
+        'Array<string> only',
+      );
+    });
+
+    it('still throws on a malformed fragment whose name IS a known scope', () => {
+      expect(() =>
+        filterScopedComments('open <internal> but never closed', new Set(['internal']), {
+          knownScopes: known,
+          itemPath: 'User.email',
+        }),
+      ).toThrow(/Unclosed scope fragment <internal>.*User\.email/);
+    });
+
+    it('keeps a known-scope fragment that wraps non-scope prose inside it', () => {
+      const text = 'Doc. <internal>see Array<string> details</internal>';
+      expect(filterScopedComments(text, new Set(['internal']), { knownScopes: known })).toBe(
+        'Doc. see Array<string> details',
+      );
+    });
+  });
+
   describe('scoped descriptions in the fixture', () => {
     it('drops all fragments when no scope is active', async () => {
       const { config } = await loadConfig({ projectRoot: FIXTURE });

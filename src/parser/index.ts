@@ -27,7 +27,11 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
   });
 
   const activeScopes = new Set(config.scopes ?? []);
-  const schemaBuilder = new SchemaBuilder(index, { activeScopes });
+  // Scope vocabulary: every `@Scope` declared in the source plus the active
+  // scopes. Only these names are treated as `<scope>…</scope>` description
+  // fragments — ordinary angle-bracket prose passes through untouched.
+  const knownScopes = new Set<string>([...index.getDeclaredScopes(), ...activeScopes]);
+  const schemaBuilder = new SchemaBuilder(index, { activeScopes, knownScopes });
 
   for (const klass of config.additionalModels ?? []) {
     const name = klass.name;
@@ -56,6 +60,7 @@ export function parseNestProject(options: ParseNestProjectOptions): OpenApiDocum
     hooks: config.hooks,
     registeredSchemes,
     activeScopes,
+    knownScopes,
   });
   const paths = pathBuilder.build();
   const tags = pathBuilder.getTags();

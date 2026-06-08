@@ -5,6 +5,8 @@ import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
 
 export interface SchemaBuilderOptions {
   activeScopes?: Set<string>;
+  /** Scope vocabulary used to recognize `<scope>…</scope>` description fragments. */
+  knownScopes?: Set<string>;
 }
 
 export interface SchemaMembers {
@@ -25,12 +27,14 @@ export class SchemaBuilder {
   private readonly pending = new Set<string>();
   private readonly done = new Set<string>();
   private readonly activeScopes: Set<string>;
+  private readonly knownScopes: Set<string> | undefined;
 
   constructor(
     private readonly index: AstIndex,
     options: SchemaBuilderOptions = {},
   ) {
     this.activeScopes = options.activeScopes ?? new Set();
+    this.knownScopes = options.knownScopes;
   }
 
   /** Register a reference to a class schema and return the `$ref` fragment. */
@@ -65,7 +69,10 @@ export class SchemaBuilder {
       if (members.required.length) schema.required = members.required;
       const rawDesc = clazz.getJsDocs()[0]?.getCommentText();
       const desc = rawDesc
-        ? filterScopedComments(rawDesc, this.activeScopes, { itemPath: name })
+        ? filterScopedComments(rawDesc, this.activeScopes, {
+            itemPath: name,
+            knownScopes: this.knownScopes,
+          })
         : undefined;
       if (desc) schema.description = desc;
       this.schemas[name] = schema;
@@ -110,6 +117,7 @@ export class SchemaBuilder {
       const desc = rawDesc
         ? filterScopedComments(rawDesc, this.activeScopes, {
             itemPath: `${clazz.getName() ?? '<anon>'}.${name}`,
+            knownScopes: this.knownScopes,
           })
         : undefined;
       if (desc) schema.description = desc;

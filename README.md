@@ -380,9 +380,10 @@ Inside any JSDoc body (controller, method, model, field), you can mark text frag
 - The item itself does **not** need a `@Scope` — fragments are independent of item visibility.
 - Multiple fragments can appear in the same JSDoc; **nesting is not allowed**.
 - Visibility follows the same rule as item-level `@Scope`: untagged text always appears; `<X>…</X>` appears only when `X` is in the active scopes; no active scope → all fragments are dropped.
-- Syntax errors (nesting, mismatched close, unclosed open) **throw** with the path of the offending item.
+- **Only known scope names are treated as fragments.** `X` is a fragment delimiter only when it's a scope declared somewhere in the project via `@Scope` (on any class, method, or property) or passed as an active scope. Any other angle-bracket text — generics in prose (`Array<string>`), placeholders (`<id>`, `<token>`), inline HTML (`<b>…</b>`) — is left **verbatim** and never triggers an error.
+- Syntax errors (nesting, mismatched close, unclosed open) **throw** with the path of the offending item — but only for genuine scope fragments. A stray `<id>` in prose is not a scope, so it's ignored, not an error.
 
-Known limitation: fenced code blocks inside JSDoc are not protected. Avoid HTML-like `<X>…</X>` content inside ` ``` ` blocks if `X` could be confused for a scope name.
+Known limitation: a fragment scope used **only** in `<X>…</X>` blocks — never as a `@Scope` tag and never activated — won't be in the project's scope vocabulary, so its text passes through as literal prose instead of being hidden. Declare the scope with a `@Scope` tag (or activate it) to make such fragments filterable.
 
 ## Hooks (project-specific glue)
 
