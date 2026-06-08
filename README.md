@@ -177,6 +177,8 @@ export class HealthController {
 }
 ```
 
+Every tag in play is also declared in the document's root `tags[]`. Controller tags come first (with the description from the class JSDoc, first controller winning on a shared name), followed by any method-level `@Tag` name no controller already declared. Those method-introduced tags carry no description — a method's JSDoc is its `operation.description`, not a tag description — but they're still declared so the operation's tag isn't dangling and tools order/group it like any other.
+
 HTTP-method decorators (and `@Controller`, `@Body`, `@Query`, `@Param`, `@Headers`) are matched by **local identifier name**. Aliased imports like `import { Post as HttpPost }` won't be detected.
 
 ### Parameters & request body

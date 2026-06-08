@@ -92,6 +92,8 @@ export class PathBuilder {
   private readonly paths: Record<string, Record<string, unknown>> = {};
   private readonly usedOperationIds = new Set<string>();
   private readonly tags = new Map<string, string | undefined>();
+  /** Distinct method-level `@Tag` names seen, declared in root after controllers. */
+  private readonly methodTagNames = new Set<string>();
   private readonly globalPrefix: string;
   private readonly hooks: NestParserHooks;
   private readonly registeredSchemes: string[];
@@ -114,13 +116,21 @@ export class PathBuilder {
     for (const controller of this.index.getControllers()) {
       this.processController(controller);
     }
+    // Declare any method-level @Tag name no controller already declared, so the
+    // operation's tag isn't dangling. Done after all controllers so a controller's
+    // description always wins over a description-less method-tag placeholder.
+    for (const name of this.methodTagNames) {
+      if (!this.tags.has(name)) this.tags.set(name, undefined);
+    }
     return this.paths;
   }
 
   /**
-   * Tag entries derived from each controller — name from `@ApiTags(...)` or the
-   * default-tag hook, description from the controller class's JSDoc. First
-   * controller wins when multiple share a tag name.
+   * Root `tags[]` entries: one per distinct tag name in play. Controller tags
+   * (name from `@Tag`/the default-tag hook, description from the class JSDoc;
+   * first controller wins on a shared name) come first, then any method-level
+   * `@Tag` name a controller didn't already declare — description-less, since a
+   * method's JSDoc is its operation description, not a tag description.
    */
   getTags(): { name: string; description?: string }[] {
     return [...this.tags.entries()].map(([name, description]) =>
@@ -160,6 +170,7 @@ export class PathBuilder {
       const routeArgs = this.stringArgs(httpDecorator, 0);
       const routePaths = routeArgs.length ? routeArgs : [''];
       const methodTag = getTags(method).Tag?.[0] ?? tag;
+      this.methodTagNames.add(methodTag);
 
       // One operation per (controller prefix × route path) combination. Each gets
       // its own operationId (uniqueOperationId de-dups) and its own path params,

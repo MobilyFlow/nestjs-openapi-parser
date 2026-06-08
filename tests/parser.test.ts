@@ -636,3 +636,96 @@ describe('array route paths', () => {
     expect(getOp(doc, '/cats/dup')!.operationId).toBe('Cats_dup');
   });
 });
+
+describe('method-level @Tag declaration', () => {
+  const opTags = (doc: OpenApiDocument, path: string): string[] =>
+    (doc.paths[path]?.get as { tags: string[] }).tags;
+
+  function buildDoc(): OpenApiDocument {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-tag-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          '',
+          '/**',
+          ' * Catalog operations.',
+          ' *',
+          ' * @Tag Catalog',
+          ' */',
+          "@Controller('catalog')",
+          'export class CatalogController {',
+          "  @Get('list')",
+          '  list(): void {}',
+          '',
+          '  /** @Tag Diagnostics */',
+          "  @Get('ping')",
+          '  ping(): void {}',
+          '',
+          '  /** @Tag Reports */',
+          "  @Get('export')",
+          '  exportData(): void {}',
+          '}',
+          '',
+          '/**',
+          ' * Reporting operations.',
+          ' *',
+          ' * @Tag Reports',
+          ' */',
+          "@Controller('reports')",
+          'export class ReportsController {',
+          "  @Get('summary')",
+          '  summary(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Catalog', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('routes operations to their method-level tag', () => {
+    const doc = buildDoc();
+    expect(opTags(doc, '/catalog/list')).toEqual(['Catalog']);
+    expect(opTags(doc, '/catalog/ping')).toEqual(['Diagnostics']);
+    expect(opTags(doc, '/catalog/export')).toEqual(['Reports']);
+  });
+
+  it('declares a novel method tag in root tags[], after controller tags, with no description', () => {
+    const doc = buildDoc();
+    expect(doc.tags?.map((t) => t.name)).toEqual(['Catalog', 'Reports', 'Diagnostics']);
+    expect(doc.tags?.find((t) => t.name === 'Diagnostics')).toEqual({ name: 'Diagnostics' });
+  });
+
+  it("a controller's description wins over a same-named method-tag placeholder", () => {
+    const doc = buildDoc();
+    // `@Tag Reports` appears on a CatalogController method AND as ReportsController's
+    // tag — the controller's description must survive.
+    expect(doc.tags?.find((t) => t.name === 'Reports')?.description).toBe('Reporting operations.');
+    expect(doc.tags?.find((t) => t.name === 'Catalog')?.description).toBe('Catalog operations.');
+  });
+});
