@@ -25,7 +25,14 @@ const HTML = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body>
-    <script id="api-reference" data-url="/openapi.json"></script>
+    <!-- Scalar sorts schema properties alphabetically by default
+         (orderSchemaPropertiesBy: 'alpha'); preserve the document order so
+         models render in source-declaration order, as the spec emits them. -->
+    <script
+      id="api-reference"
+      data-url="/openapi.json"
+      data-configuration='{"orderSchemaPropertiesBy":"preserve","orderRequiredPropertiesFirst":true}'
+    ></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
   </body>
 </html>
