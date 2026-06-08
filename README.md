@@ -158,6 +158,8 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 | `@Get/@Post/@Put/@Delete/@Patch('path')`               | OpenAPI operation under `paths[fullPath][httpMethod]`                          |
 | `@Get(['a', 'b'])` / `@Controller(['x', 'y'])` arrays  | one operation per path (full prefix × route cross-product), unique operationIds |
 | `:id` route placeholders                               | rewritten to `{id}` in the OpenAPI path                                        |
+| `:id?` optional param                                  | split into two paths — without the segment and with `{id}` (params are always required) |
+| `:id(\d+)` regex / `*` wildcard / `:x+` modifier       | **route skipped** with a warning — no faithful OpenAPI representation           |
 | `app.setGlobalPrefix('v1')`                            | declare via `project.globalPrefix` in the config                               |
 | Method's JSDoc                                         | `operation.description`                                                        |
 | Controller class JSDoc                                 | `tags[].description`                                                           |
@@ -534,6 +536,7 @@ The test suite snapshots one OpenAPI document per scope variant. After an intent
 - Pipe detection in `@Param` is textual (`ParseUUIDPipe` / `ParseIntPipe` / `ParseBoolPipe`). Custom pipes fall back to the parameter type.
 - No support yet for `@nestjs/swagger`'s `@ApiProperty(...)` runtime overrides — describe properties via JSDoc instead.
 - Module-level filtering (e.g. emit only routes from one Nest module) is not built in — control it at the `rootDir` / `excludeSuffixes` / `@Scope` level.
+- Route patterns OpenAPI can't represent — inline regex (`:id(\d+)`), wildcards (`*`, `:splat*`), `+`/`*` modifiers, and more than one optional param in a route — are **skipped with a warning**. Optional params (`:id?`) are supported via path splitting.
 
 ## License
 

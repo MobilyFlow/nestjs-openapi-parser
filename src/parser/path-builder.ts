@@ -170,25 +170,27 @@ export class PathBuilder {
       const routeArgs = this.stringArgs(httpDecorator, 0);
       const routePaths = routeArgs.length ? routeArgs : [''];
       const methodTag = getTags(method).Tag?.[0] ?? tag;
-      this.methodTagNames.add(methodTag);
 
-      // One operation per (controller prefix × route path) combination. Each gets
-      // its own operationId (uniqueOperationId de-dups) and its own path params,
-      // since the placeholders can differ between paths (e.g. `@Get([':id', 'all'])`).
+      // One operation per (controller prefix × route path × optional-param
+      // expansion) combination. Each gets its own operationId (uniqueOperationId
+      // de-dups) and its own path params, since placeholders can differ per path.
       for (const base of basePaths) {
         for (const route of routePaths) {
-          const fullPath = this.toOpenApiPath(this.joinPath(this.globalPrefix, base, route));
-          const templateParams = this.pathParamNames(fullPath);
-          const operation = this.buildOperation(
-            controller,
-            method,
-            httpMethod,
-            methodTag,
-            templateParams,
-          );
+          const rawPath = this.joinPath(this.globalPrefix, base, route);
+          for (const fullPath of this.expandRoutePaths(rawPath, controller, method)) {
+            this.methodTagNames.add(methodTag);
+            const templateParams = this.pathParamNames(fullPath);
+            const operation = this.buildOperation(
+              controller,
+              method,
+              httpMethod,
+              methodTag,
+              templateParams,
+            );
 
-          this.paths[fullPath] ??= {};
-          this.paths[fullPath][httpMethod] = operation;
+            this.paths[fullPath] ??= {};
+            this.paths[fullPath][httpMethod] = operation;
+          }
         }
       }
     }
@@ -437,6 +439,52 @@ export class PathBuilder {
 
   private joinPath(...parts: string[]): string {
     return ('/' + parts.filter(Boolean).join('/')).replace(/\/{2,}/g, '/');
+  }
+
+  /**
+   * Turn a raw NestJS route (with `:params`) into the OpenAPI path(s) it maps to.
+   *
+   *  - An optional param (`:id?`) expands into the with/without pair, because
+   *    OpenAPI path params are always required (`a/:id?` → `/a` and `/a/{id}`).
+   *  - Constructs OpenAPI can't represent — inline regex (`:id(\d+)`), wildcards
+   *    (`*`, `:splat*`), `+`/`*` modifiers, and more than one optional param —
+   *    cause the route to be skipped with a warning.
+   */
+  private expandRoutePaths(
+    rawPath: string,
+    controller: ClassDeclaration,
+    method: MethodDeclaration,
+  ): string[] {
+    const where = (): string => `${controller.getName() ?? '<anon>'}.${method.getName()}`;
+    const skip = (reason: string): string[] => {
+      console.warn(`[nestparser] Skipping route "${rawPath}" (${where()}): ${reason}`);
+      return [];
+    };
+
+    if (/[*+()]/.test(rawPath)) {
+      return skip(
+        "unsupported path pattern (regex, wildcard or modifier). Only ':param' and optional ':param?' are handled.",
+      );
+    }
+
+    const segments = rawPath.split('/').filter(Boolean);
+    const optionalIdx = segments.flatMap((s, i) => (/^:[A-Za-z0-9_]+\?$/.test(s) ? [i] : []));
+    if (optionalIdx.length > 1) {
+      return skip("more than one optional ':param?' in a route is not supported.");
+    }
+    if (optionalIdx.length === 0) {
+      return [this.toOpenApiPath('/' + segments.join('/'))];
+    }
+
+    // Exactly one optional: emit the route without that segment, and with it
+    // present (the trailing `?` dropped so it's a normal required param).
+    const i = optionalIdx[0];
+    const without = segments.filter((_, idx) => idx !== i);
+    const present = segments.map((s, idx) => (idx === i ? s.slice(0, -1) : s));
+    return [
+      this.toOpenApiPath('/' + without.join('/')),
+      this.toOpenApiPath('/' + present.join('/')),
+    ];
   }
 
   private toOpenApiPath(routePath: string): string {

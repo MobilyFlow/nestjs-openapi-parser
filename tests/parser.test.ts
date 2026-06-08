@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AstIndex, SchemaBuilder, loadConfig, parseNestProject } from '../src/lib';
 import type { ModelConstructor, NestParserConfig } from '../src/lib';
 import type { OpenApiDocument } from '../src/types/openapi';
@@ -727,5 +727,109 @@ describe('method-level @Tag declaration', () => {
     // tag — the controller's description must survive.
     expect(doc.tags?.find((t) => t.name === 'Reports')?.description).toBe('Reporting operations.');
     expect(doc.tags?.find((t) => t.name === 'Catalog')?.description).toBe('Catalog operations.');
+  });
+});
+
+describe('optional & unsupported route patterns', () => {
+  type Op = { operationId: string; parameters?: { name: string; in: string }[] };
+  const getOp = (doc: OpenApiDocument, p: string): Op | undefined =>
+    doc.paths[p]?.get as Op | undefined;
+
+  function build(): { doc: OpenApiDocument; warnings: string[] } {
+    const warnings: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((msg?: unknown) => {
+      warnings.push(String(msg));
+    });
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-routepat-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'users.controller.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          'declare function Param(name: string): ParameterDecorator;',
+          '',
+          "@Controller('users')",
+          'export class UsersController {',
+          "  @Get(':id?')", // optional trailing → /users and /users/{id}
+          "  findOne(@Param('id') _id: string): void {}",
+          '',
+          "  @Get('a/:x?/b')", // optional in the middle → /users/a/b and /users/a/{x}/b
+          '  mid(): void {}',
+          '',
+          "  @Get('num/:id([0-9]+)')", // regex → skipped
+          '  numeric(): void {}',
+          '',
+          "  @Get('files/*')", // wildcard → skipped
+          '  wild(): void {}',
+          '',
+          "  @Get(':a?/:b?')", // two optionals → skipped
+          '  twoOpt(): void {}',
+          '',
+          "  @Get('ok')", // plain → /users/ok
+          '  ok(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      const doc = parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Users', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+      return { doc, warnings };
+    } finally {
+      spy.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('splits a trailing optional param into a with/without pair', () => {
+    const { doc } = build();
+    expect(getOp(doc, '/users')).toBeDefined();
+    expect(getOp(doc, '/users/{id}')).toBeDefined();
+    expect(getOp(doc, '/users')!.parameters ?? []).toEqual([]);
+    expect(getOp(doc, '/users/{id}')!.parameters?.map((p) => p.name)).toEqual(['id']);
+    // The two halves are distinct operations.
+    expect(getOp(doc, '/users')!.operationId).not.toBe(getOp(doc, '/users/{id}')!.operationId);
+  });
+
+  it('splits an optional param in the middle of the route', () => {
+    const { doc } = build();
+    expect(getOp(doc, '/users/a/b')).toBeDefined();
+    expect(getOp(doc, '/users/a/{x}/b')).toBeDefined();
+  });
+
+  it('skips regex, wildcard, and multi-optional routes, keeping plain ones', () => {
+    const { doc } = build();
+    expect(getOp(doc, '/users/num/{id}')).toBeUndefined();
+    expect(Object.keys(doc.paths).some((p) => p.includes('files'))).toBe(false);
+    expect(getOp(doc, '/users/{a}')).toBeUndefined();
+    expect(getOp(doc, '/users/{a}/{b}')).toBeUndefined();
+    // A normal sibling route is still emitted.
+    expect(getOp(doc, '/users/ok')).toBeDefined();
+  });
+
+  it('logs a warning naming each skipped route', () => {
+    const { warnings } = build();
+    expect(warnings.some((w) => w.includes('num/:id') && /unsupported/.test(w))).toBe(true);
+    expect(warnings.some((w) => w.includes('files/*') && /unsupported/.test(w))).toBe(true);
+    expect(warnings.some((w) => w.includes(':a?/:b?') && /optional/.test(w))).toBe(true);
   });
 });
