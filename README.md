@@ -156,6 +156,7 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | `@Controller('users')`                                 | base path + default tag derived from the class name (see below)                |
 | `@Get/@Post/@Put/@Delete/@Patch('path')`               | OpenAPI operation under `paths[fullPath][httpMethod]`                          |
+| `@Get(['a', 'b'])` / `@Controller(['x', 'y'])` arrays  | one operation per path (full prefix × route cross-product), unique operationIds |
 | `:id` route placeholders                               | rewritten to `{id}` in the OpenAPI path                                        |
 | `app.setGlobalPrefix('v1')`                            | declare via `project.globalPrefix` in the config                               |
 | Method's JSDoc                                         | `operation.description`                                                        |

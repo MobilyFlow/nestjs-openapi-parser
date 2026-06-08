@@ -543,3 +543,96 @@ describe('response status (@HttpCode)', () => {
     expect(statusOf(doc, '/things/gone', 'delete')).toBe('204');
   });
 });
+
+describe('array route paths', () => {
+  type Op = { operationId: string; parameters?: { name: string; in: string }[] };
+  const getOp = (doc: OpenApiDocument, path: string): Op | undefined =>
+    doc.paths[path]?.get as Op | undefined;
+
+  function buildDoc(): OpenApiDocument {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-arraypath-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string | string[]): ClassDecorator;',
+          'declare function Get(path?: string | string[]): MethodDecorator;',
+          'declare function Param(name: string): ParameterDecorator;',
+          '',
+          "@Controller('cats')",
+          'export class CatsController {',
+          "  @Get(['a', 'b'])",
+          '  ab(): void {}',
+          '',
+          "  @Get([':id', 'all'])",
+          "  byIdOrAll(@Param('id') _id: string): void {}",
+          '',
+          "  @Get(['dup', 'dup'])",
+          '  dup(): void {}',
+          '}',
+          '',
+          "@Controller(['v1/admin', 'v2/admin'])",
+          'export class AdminController {',
+          "  @Get('ping')",
+          '  ping(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Cats', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('emits one operation per entry in an array route, with unique operationIds', () => {
+    const doc = buildDoc();
+    const a = getOp(doc, '/cats/a');
+    const b = getOp(doc, '/cats/b');
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    expect(a!.operationId).not.toBe(b!.operationId);
+  });
+
+  it('computes path params per path — a placeholder entry vs a static alias', () => {
+    const doc = buildDoc();
+    const byId = getOp(doc, '/cats/{id}');
+    const all = getOp(doc, '/cats/all');
+    expect(byId?.parameters?.map((p) => p.name)).toEqual(['id']);
+    // The static alias shares the @Param('id') binding but has no {id} placeholder.
+    expect(all?.parameters ?? []).toEqual([]);
+  });
+
+  it('expands an array @Controller prefix across every route', () => {
+    const doc = buildDoc();
+    expect(getOp(doc, '/v1/admin/ping')).toBeDefined();
+    expect(getOp(doc, '/v2/admin/ping')).toBeDefined();
+  });
+
+  it('collapses duplicate entries in an array path', () => {
+    const doc = buildDoc();
+    expect(getOp(doc, '/cats/dup')).toBeDefined();
+    // No spurious `_2` operation was created for the duplicate.
+    expect(getOp(doc, '/cats/dup')!.operationId).toBe('Cats_dup');
+  });
+});

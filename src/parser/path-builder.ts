@@ -131,7 +131,10 @@ export class PathBuilder {
   private processController(controller: ClassDeclaration): void {
     if (!isVisible(getScopes(getTags(controller)), this.activeScopes)) return;
 
-    const basePath = this.stringArg(controller.getDecorator('Controller'), 0) ?? '';
+    // @Controller and the route decorators each accept `string | string[]`; an
+    // array prefix/path means the handler is mapped to several routes at once.
+    const basePathArgs = this.stringArgs(controller.getDecorator('Controller'), 0);
+    const basePaths = basePathArgs.length ? basePathArgs : [''];
     const controllerTagBag = getTags(controller);
     const tag =
       controllerTagBag.Tag?.[0] ?? (this.hooks.controllerTag ?? this.defaultTag)(controller);
@@ -154,21 +157,29 @@ export class PathBuilder {
       if (!httpDecorator) continue;
 
       const httpMethod = HTTP_METHODS[httpDecorator.getName()];
-      const routePath = this.stringArg(httpDecorator, 0) ?? '';
-      const fullPath = this.toOpenApiPath(this.joinPath(this.globalPrefix, basePath, routePath));
-
+      const routeArgs = this.stringArgs(httpDecorator, 0);
+      const routePaths = routeArgs.length ? routeArgs : [''];
       const methodTag = getTags(method).Tag?.[0] ?? tag;
-      const templateParams = this.pathParamNames(fullPath);
-      const operation = this.buildOperation(
-        controller,
-        method,
-        httpMethod,
-        methodTag,
-        templateParams,
-      );
 
-      this.paths[fullPath] ??= {};
-      this.paths[fullPath][httpMethod] = operation;
+      // One operation per (controller prefix × route path) combination. Each gets
+      // its own operationId (uniqueOperationId de-dups) and its own path params,
+      // since the placeholders can differ between paths (e.g. `@Get([':id', 'all'])`).
+      for (const base of basePaths) {
+        for (const route of routePaths) {
+          const fullPath = this.toOpenApiPath(this.joinPath(this.globalPrefix, base, route));
+          const templateParams = this.pathParamNames(fullPath);
+          const operation = this.buildOperation(
+            controller,
+            method,
+            httpMethod,
+            methodTag,
+            templateParams,
+          );
+
+          this.paths[fullPath] ??= {};
+          this.paths[fullPath][httpMethod] = operation;
+        }
+      }
     }
   }
 
@@ -376,6 +387,27 @@ export class PathBuilder {
     if (!decorator) return undefined;
     const arg = decorator.getArguments()[index];
     return arg && Node.isStringLiteral(arg) ? arg.getLiteralValue() : undefined;
+  }
+
+  /**
+   * Read a decorator argument that may be a string literal or an array of string
+   * literals (`@Get('a')` or `@Get(['a', 'b'])`), returning the distinct values.
+   * Non-string and dynamic entries are skipped; the result is empty when absent.
+   */
+  private stringArgs(decorator: Decorator | undefined, index: number): string[] {
+    if (!decorator) return [];
+    const arg = decorator.getArguments()[index];
+    if (!arg) return [];
+    let values: string[] = [];
+    if (Node.isStringLiteral(arg)) {
+      values = [arg.getLiteralValue()];
+    } else if (Node.isArrayLiteralExpression(arg)) {
+      values = arg
+        .getElements()
+        .filter(Node.isStringLiteral)
+        .map((el) => el.getLiteralValue());
+    }
+    return [...new Set(values)];
   }
 
   private defaultTag(controller: ClassDeclaration): string {
