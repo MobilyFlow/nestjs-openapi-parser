@@ -460,3 +460,86 @@ describe('enum schemas', () => {
     expect(holderProps().floats).toEqual({ type: 'number', enum: [0.5, 1.5] });
   });
 });
+
+describe('response status (@HttpCode)', () => {
+  const statusOf = (doc: OpenApiDocument, path: string, method: 'get' | 'post' | 'delete') =>
+    Object.keys((doc.paths[path]?.[method] as { responses: Record<string, unknown> }).responses)[0];
+
+  function buildThingsDoc(): OpenApiDocument {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-httpcode-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'things.controller.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Post(path?: string): MethodDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          'declare function Delete(path?: string): MethodDecorator;',
+          'declare function HttpCode(code: number): MethodDecorator;',
+          'declare const HttpStatus: { OK: number; ACCEPTED: number; NO_CONTENT: number };',
+          '',
+          "@Controller('things')",
+          'export class ThingsController {',
+          "  @Post('default')",
+          '  createDefault(): void {}',
+          '',
+          "  @Post('no-content')",
+          '  @HttpCode(204)',
+          '  noContent(): void {}',
+          '',
+          "  @Post('accepted')",
+          '  @HttpCode(HttpStatus.ACCEPTED)',
+          '  accepted(): void {}',
+          '',
+          "  @Get('ok')",
+          '  ok(): void {}',
+          '',
+          "  @Delete('gone')",
+          '  @HttpCode(HttpStatus.NO_CONTENT)',
+          '  gone(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Things', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('defaults to 201 for POST and 200 for other verbs when no @HttpCode', () => {
+    const doc = buildThingsDoc();
+    expect(statusOf(doc, '/things/default', 'post')).toBe('201');
+    expect(statusOf(doc, '/things/ok', 'get')).toBe('200');
+  });
+
+  it('honors a numeric @HttpCode literal', () => {
+    expect(statusOf(buildThingsDoc(), '/things/no-content', 'post')).toBe('204');
+  });
+
+  it('resolves an @HttpCode(HttpStatus.MEMBER) reference', () => {
+    const doc = buildThingsDoc();
+    expect(statusOf(doc, '/things/accepted', 'post')).toBe('202');
+    expect(statusOf(doc, '/things/gone', 'delete')).toBe('204');
+  });
+});

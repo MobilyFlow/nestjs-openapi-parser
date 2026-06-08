@@ -197,7 +197,9 @@ Pipe detection is **textual** — it looks for `ParseUUIDPipe` / `ParseIntPipe` 
 
 ### Responses
 
-The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize with the [`buildResponseSchema`](#hooks-project-specific-glue) hook.
+The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize the body with the [`buildResponseSchema`](#hooks-project-specific-glue) hook.
+
+**`@HttpCode(...)` overrides the status.** A handler decorated with `@HttpCode(204)` (numeric literal) or `@HttpCode(HttpStatus.NO_CONTENT)` (the `HttpStatus` member is resolved from a built-in name→code table) uses that code as the response key instead of the 201/200 default — matching NestJS's own behavior.
 
 ### Schemas
 
