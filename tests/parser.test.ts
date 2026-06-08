@@ -398,3 +398,65 @@ describe('path parameters from the route template', () => {
     expect(params[0].schema).toEqual({ type: 'string' });
   });
 });
+
+describe('enum schemas', () => {
+  // Derive every property schema of `Holder`, whose fields are typed by enums
+  // of each value kind. The fixture only has string enums, so use a throwaway.
+  function holderProps(): Record<string, Record<string, unknown>> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-enum-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', strict: false },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'export enum Explicit { A = 1, B = 2 }',
+          'export enum Implicit { X, Y, Z }',
+          "export enum Strings { DRAFT = 'DRAFT', PUBLISHED = 'PUBLISHED' }",
+          'export enum Floats { LOW = 0.5, HIGH = 1.5 }',
+          'export class Holder {',
+          '  explicit!: Explicit;',
+          '  implicit!: Implicit;',
+          '  strings!: Strings;',
+          '  floats!: Floats;',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const index = new AstIndex({
+        projectRoot: tmp,
+        project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+      });
+      const holder = index.getClass('Holder');
+      expect(holder).toBeDefined();
+      return new SchemaBuilder(index).buildMembers(holder!).properties as Record<
+        string,
+        Record<string, unknown>
+      >;
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('emits integer for an explicitly-numbered numeric enum', () => {
+    expect(holderProps().explicit).toEqual({ type: 'integer', enum: [1, 2] });
+  });
+
+  it('emits integer for an implicit (auto-numbered) numeric enum', () => {
+    expect(holderProps().implicit).toEqual({ type: 'integer', enum: [0, 1, 2] });
+  });
+
+  it('keeps string for a string enum', () => {
+    expect(holderProps().strings).toEqual({ type: 'string', enum: ['DRAFT', 'PUBLISHED'] });
+  });
+
+  it('emits number (not integer) for a non-integer numeric enum', () => {
+    expect(holderProps().floats).toEqual({ type: 'number', enum: [0.5, 1.5] });
+  });
+});

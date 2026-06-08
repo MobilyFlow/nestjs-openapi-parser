@@ -144,7 +144,7 @@ export class AstIndex {
     return properties;
   }
 
-  /** Resolve the named enum's string values, or undefined if unknown. */
+  /** Resolve the named enum's member values (string or numeric), or undefined if unknown. */
   getEnumValues(name: string): (string | number)[] | undefined {
     const e = this.enumsMap.get(name);
     if (!e) return undefined;

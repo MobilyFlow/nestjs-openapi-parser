@@ -170,7 +170,7 @@ export class SchemaBuilder {
     }
 
     if (symbolName && this.index.hasEnum(symbolName)) {
-      return { type: 'string', enum: this.index.getEnumValues(symbolName) };
+      return this.enumSchema(symbolName);
     }
 
     if (type.isUnion()) {
@@ -194,6 +194,28 @@ export class SchemaBuilder {
     }
 
     return { type: 'object' };
+  }
+
+  /**
+   * Build the schema for a named TS enum, deriving `type` from the member
+   * values rather than assuming strings:
+   *  - all strings        -> `string`
+   *  - all integers       -> `integer`
+   *  - all numbers (some non-integer) -> `number`
+   *  - mixed string/number -> `type` omitted (no single OpenAPI type fits)
+   */
+  private enumSchema(name: string): OpenApiSchema {
+    const values = this.index.getEnumValues(name) ?? [];
+    if (values.length === 0) return { type: 'string', enum: values };
+
+    if (values.every((v) => typeof v === 'number')) {
+      const type = values.every((v) => Number.isInteger(v)) ? 'integer' : 'number';
+      return { type, enum: values };
+    }
+    if (values.every((v) => typeof v === 'string')) {
+      return { type: 'string', enum: values };
+    }
+    return { enum: values };
   }
 
   private mergeMembers(a: SchemaMembers, b: SchemaMembers): SchemaMembers {

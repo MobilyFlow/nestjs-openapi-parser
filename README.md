@@ -211,7 +211,7 @@ The schema builder accepts TypeScript classes and produces OpenAPI object schema
 | `string` / `number` / `boolean` types                 | OpenAPI primitive                                                       |
 | `Date`                                                | `{ type: 'string', format: 'date-time' }`                               |
 | `T[]`                                                 | `{ type: 'array', items: schemaOf(T) }`                                 |
-| TypeScript `enum`                                     | `{ type: 'string', enum: [...] }`                                       |
+| TypeScript `enum`                                     | `{ type, enum: [...] }` — `type` is `string`, `integer`, or `number` by member value |
 | `"a" \| "b" \| "c"` string-literal union              | `{ type: 'string', enum: ['a','b','c'] }`                               |
 | Union of classes                                      | `{ oneOf: [...] }`                                                      |
 | `extends PartialType(X)`                              | all properties of `X` made optional                                     |
