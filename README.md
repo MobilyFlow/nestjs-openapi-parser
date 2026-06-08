@@ -119,7 +119,7 @@ Options:
 
 The parser **self-validates** its output: `parseNestProject` checks the generated document against the OpenAPI 3.x JSON Schema (via [`@seriousme/openapi-schema-validator`](https://github.com/seriousme/openapi-schema-validator)) before returning, and **throws** if it's invalid — a produced-but-invalid document signals a parser/config bug, never something to ship silently. The CLI surfaces that as a non-zero exit with the errors, so it doubles as a CI gate. (Because validation is async, `parseNestProject` returns a `Promise`.) The same check is exposed directly as `validateDocument(doc) → { valid, errors }` from the library entry.
 
-The config is also validated up front: `openapi.title` and `openapi.version` must be non-empty strings (the loader fails fast with a clear message otherwise — relevant for JSON/JS configs that bypass the `defineConfig` types).
+`openapi.title` and `openapi.version` are required, but you don't have to set them: if a config omits either (or there's no config at all), the loader fills it from the project's `package.json` (`name`/`version`, else generic `API`/`1.0.0`) and warns — so a present field always wins, and a missing one never blocks generation.
 
 ### Config file discovery
 
@@ -136,6 +136,8 @@ nestparser.config.json
 ```
 
 `.ts` / `.mts` / `.cts` files are loaded via [`tsx`](https://github.com/privatenumber/tsx) (registered lazily — JSON-only users don't pay for it). Use `--config <path>` to point at an explicit file.
+
+**Config is optional.** If auto-discovery finds nothing, the parser emits a warning and falls back to a default config — `openapi.title`/`version` come from the project's `package.json` (`name`/`version`), with everything else on engine defaults (`rootDir: src`, `tsConfigFilePath: tsconfig.json`, no hooks). This lets you run against a vanilla NestJS project with zero setup. An explicit `--config <path>` that doesn't exist is still an error.
 
 ### Library use
 

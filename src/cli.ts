@@ -33,7 +33,7 @@ async function run(options: CliOptions): Promise<void> {
     options.scope !== undefined ? { ...config, scopes: parseScopeList(options.scope) } : config;
 
   console.log(`Project root: ${projectRoot}`);
-  console.log(`Config file:  ${filePath}`);
+  console.log(`Config file:  ${filePath ?? '(none — using defaults)'}`);
   if (effectiveConfig.scopes && effectiveConfig.scopes.length > 0) {
     console.log(`Active scopes: ${effectiveConfig.scopes.join(', ')}`);
   }

@@ -997,42 +997,104 @@ describe('class-validator constraint mapping', () => {
   });
 });
 
-describe('config validation', () => {
-  function writeJsonConfig(openapi: unknown): string {
+describe('config title/version defaults', () => {
+  function writeProject(openapi: unknown, pkg?: object): string {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-cfg-')));
     fs.writeFileSync(path.join(tmp, 'nestparser.config.json'), JSON.stringify({ openapi }));
+    if (pkg) fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify(pkg));
     return tmp;
   }
 
-  it('rejects a config whose openapi.title is missing or blank', async () => {
-    for (const openapi of [{ version: '1.0.0' }, { title: '   ', version: '1.0.0' }]) {
-      const tmp = writeJsonConfig(openapi);
-      try {
-        await expect(loadConfig({ projectRoot: tmp })).rejects.toThrow(
-          /openapi\.title.*non-empty string/,
-        );
-      } finally {
-        fs.rmSync(tmp, { recursive: true, force: true });
-      }
-    }
-  });
-
-  it('rejects a config whose openapi.version is missing', async () => {
-    const tmp = writeJsonConfig({ title: 'X' });
+  it('fills a missing title/version from package.json (config values win when present)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // title omitted → from package.json name; version present in config → kept.
+    const tmp = writeProject({ version: '9.9.9' }, { name: 'svc', version: '2.0.0' });
     try {
-      await expect(loadConfig({ projectRoot: tmp })).rejects.toThrow(
-        /openapi\.version.*non-empty string/,
-      );
+      const { config } = await loadConfig({ projectRoot: tmp });
+      expect(config.openapi).toEqual({ title: 'svc', version: '9.9.9' });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/missing openapi\.title/));
     } finally {
+      warn.mockRestore();
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  it('accepts a valid minimal config', async () => {
-    const tmp = writeJsonConfig({ title: 'X', version: '1.0.0' });
+  it('falls back to generic title/version when neither config nor package.json provides them', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tmp = writeProject({ description: 'no title or version here' });
+    try {
+      const { config } = await loadConfig({ projectRoot: tmp });
+      expect(config.openapi.title).toBe('API');
+      expect(config.openapi.version).toBe('1.0.0');
+    } finally {
+      warn.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves a complete config untouched and does not warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tmp = writeProject({ title: 'X', version: '1.0.0' });
     try {
       const { config } = await loadConfig({ projectRoot: tmp });
       expect(config.openapi).toEqual({ title: 'X', version: '1.0.0' });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("still rejects a config that has no 'openapi' object", async () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-cfg-')));
+    fs.writeFileSync(path.join(tmp, 'nestparser.config.json'), JSON.stringify({ project: {} }));
+    try {
+      await expect(loadConfig({ projectRoot: tmp })).rejects.toThrow(/missing 'openapi'/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('config fallback (no config file)', () => {
+  function tmpProject(pkg?: object): string {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-nocfg-')));
+    if (pkg) fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify(pkg));
+    return tmp;
+  }
+
+  it('falls back to a default config from package.json and warns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tmp = tmpProject({ name: 'my-svc', version: '2.3.4' });
+    try {
+      const { config, filePath } = await loadConfig({ projectRoot: tmp });
+      expect(filePath).toBeUndefined();
+      expect(config.openapi).toEqual({ title: 'my-svc', version: '2.3.4' });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/No config file found/));
+    } finally {
+      warn.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('uses generic title/version when package.json is absent', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tmp = tmpProject();
+    try {
+      const { config } = await loadConfig({ projectRoot: tmp });
+      expect(config.openapi).toEqual({ title: 'API', version: '1.0.0' });
+    } finally {
+      warn.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('still throws when an explicit --config path does not exist', async () => {
+    const tmp = tmpProject();
+    try {
+      await expect(loadConfig({ projectRoot: tmp, configPath: 'nope.config.ts' })).rejects.toThrow(
+        /not found/i,
+      );
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
