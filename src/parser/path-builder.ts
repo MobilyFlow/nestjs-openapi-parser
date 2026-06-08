@@ -74,6 +74,14 @@ const HTTP_STATUS_CODES: Record<string, number> = {
   HTTP_VERSION_NOT_SUPPORTED: 505,
 };
 
+/** Humanize a method name: split camelCase/PascalCase boundaries and capitalize. */
+function humanizeMethodName(name: string): string {
+  const spaced = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 export interface PathBuilderOptions {
   globalPrefix?: string;
   hooks?: NestParserHooks;
@@ -208,6 +216,9 @@ export class PathBuilder {
       tags: [tag],
     };
 
+    const summary = this.resolveSummary(controller, method, httpMethod);
+    if (summary) operation.summary = summary;
+
     const rawDesc = method.getJsDocs()[0]?.getCommentText();
     const desc = rawDesc
       ? filterScopedComments(rawDesc, this.activeScopes, {
@@ -281,6 +292,26 @@ export class PathBuilder {
     if (security !== undefined) operation.security = security;
 
     return operation;
+  }
+
+  /**
+   * The operation `summary`: a method-level `@Name` JSDoc tag (highest priority),
+   * else the `endpointSummary` hook when it returns a value, else the default —
+   * the method name humanized.
+   */
+  private resolveSummary(
+    controller: ClassDeclaration,
+    method: MethodDeclaration,
+    httpMethod: string,
+  ): string {
+    const named = getTags(method).Name?.[0];
+    if (named) return named;
+
+    const defaultSummary = humanizeMethodName(method.getName());
+    return (
+      this.hooks.endpointSummary?.({ controller, method, httpMethod, defaultSummary }) ??
+      defaultSummary
+    );
   }
 
   private buildQueryParameters(

@@ -174,6 +174,8 @@ The parser walks `<projectRoot>/<rootDir>` (default `src/`), indexes every class
 | Method's JSDoc                                         | `operation.description`                                                        |
 | Controller class JSDoc                                 | `tags[].description`                                                           |
 | `@Tag <name>` JSDoc tag (controller or method)         | overrides the derived tag for that controller / operation                      |
+| Method name → `operation.summary`                      | humanized method name by default (see below)                                  |
+| `@Name <text>` JSDoc tag (method)                      | overrides the operation `summary`                                             |
 
 **Default tag derivation.** The class name has its trailing `Controller` suffix stripped, then PascalCase boundaries are split with spaces — `UserAuthController` → `"User Auth"`, `HealthController` → `"Health"`, `APIClientController` → `"API Client"`. Override the rule globally via the [`controllerTag`](#hooks-project-specific-glue) hook, or per-controller / per-method via a `@Tag <name>` JSDoc tag (single line, like `@Scope`):
 
@@ -190,6 +192,20 @@ export class HealthController {
 ```
 
 Every tag in play is also declared in the document's root `tags[]`. Controller tags come first (with the description from the class JSDoc, first controller winning on a shared name), followed by any method-level `@Tag` name no controller already declared. Those method-introduced tags carry no description — a method's JSDoc is its `operation.description`, not a tag description — but they're still declared so the operation's tag isn't dangling and tools order/group it like any other.
+
+**Operation summary.** Every operation gets a `summary`. By default it's the **method name humanized** — camelCase/PascalCase split into words with the first letter capitalized (`findOne` → `"Find One"`, `remove` → `"Remove"`). Override it per-endpoint with a `@Name <text>` JSDoc tag on the method (single line, like `@Tag`), or globally with the [`endpointSummary`](#hooks-project-specific-glue) hook. Precedence: **`@Name` > `endpointSummary` hook > default**; the hook returning `null`/`undefined` falls back to the default.
+
+```ts
+@Controller('posts')
+export class PostsController {
+  /** @Name Publish a post */
+  @Post()
+  create() { /* ... */ }   // summary: "Publish a post"
+
+  @Get(':id')
+  findOne() { /* ... */ }   // summary: "Find One"
+}
+```
 
 HTTP-method decorators (and `@Controller`, `@Body`, `@Query`, `@Param`, `@Headers`) are matched by **local identifier name**. Aliased imports like `import { Post as HttpPost }` won't be detected.
 
@@ -429,7 +445,7 @@ Known limitation: a fragment scope used **only** in `<X>…</X>` blocks — neve
 
 ## Hooks (project-specific glue)
 
-Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Three hooks let you customize:
+Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Four hooks let you customize:
 
 ```ts
 defineConfig({
@@ -438,6 +454,7 @@ defineConfig({
     buildResponseSchema: (ctx) => { /* ... */ },
     resolveSecurity:    (ctx) => { /* ... */ },
     controllerTag:      (clazz) => { /* ... */ },
+    endpointSummary:    (ctx) => { /* ... */ },
   },
 });
 ```
@@ -492,7 +509,16 @@ Override the default tag derivation:
 
 - `controllerTag` — default strips the `Controller` suffix and splits PascalCase boundaries with spaces (`UserAuthController` → `"User Auth"`). For one-off overrides, prefer the `@Tag <name>` JSDoc tag on the controller (or method) — no hook needed.
 
-The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup with both hooks (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).
+### `endpointSummary(ctx)`
+
+Build the `operation.summary` for each endpoint. `ctx` provides `{ controller, method, httpMethod, defaultSummary }` (`defaultSummary` is the humanized method name). Return a string to use it, or `null`/`undefined` to keep `defaultSummary`. A method-level `@Name <text>` JSDoc tag overrides both the hook and the default.
+
+```ts
+endpointSummary: ({ httpMethod, defaultSummary }) =>
+  `${httpMethod.toUpperCase()} — ${defaultSummary}`;
+```
+
+The test fixture's config at [`tests/fixtures/example-app/nestparser.config.ts`](tests/fixtures/example-app/nestparser.config.ts) demonstrates a working setup (`{ success, message, data }` envelope, `PaginatedResponse<T>` special-casing, `@Public()`-based security).
 
 ## Programmatic API
 

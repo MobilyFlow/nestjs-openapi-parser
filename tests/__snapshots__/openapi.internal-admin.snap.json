@@ -12,6 +12,7 @@
         "tags": [
           "Admin"
         ],
+        "summary": "Whoami",
         "responses": {
           "200": {
             "description": "Successful response",
@@ -53,6 +54,7 @@
         "tags": [
           "Auth"
         ],
+        "summary": "Login",
         "description": "Exchange credentials for an access token.",
         "requestBody": {
           "required": true,
@@ -101,6 +103,7 @@
         "tags": [
           "System Health"
         ],
+        "summary": "Check",
         "description": "Liveness probe.\n\nInternal note: returns the in-memory uptime, not the process clock.",
         "responses": {
           "200": {
@@ -139,6 +142,7 @@
         "tags": [
           "Posts"
         ],
+        "summary": "List",
         "description": "Paginated list of posts, optionally filtered.",
         "parameters": [
           {
@@ -244,6 +248,7 @@
         "tags": [
           "Posts"
         ],
+        "summary": "Publish a post",
         "description": "Create a post and return the created `<BlogPost>` with its generated `<id>`.",
         "requestBody": {
           "required": true,
@@ -296,6 +301,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "List",
         "description": "Paginated list of users.",
         "parameters": [
           {
@@ -377,6 +383,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Create",
         "requestBody": {
           "required": true,
           "content": {
@@ -428,6 +435,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Find One",
         "description": "Fetch a single user by UUID.",
         "parameters": [
           {
@@ -479,6 +487,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Update",
         "parameters": [
           {
             "name": "id",
@@ -539,6 +548,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Remove",
         "parameters": [
           {
             "name": "id",
@@ -587,6 +597,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Bridge Action",
         "description": "Internal helper that returns an admin-only overlay.",
         "parameters": [
           {

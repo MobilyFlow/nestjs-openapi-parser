@@ -11,6 +11,7 @@ export type {
   ConventionsConfig,
   ResponseSchemaContext,
   SecurityContext,
+  EndpointSummaryContext,
   ModelConstructor,
 } from './config/types';
 

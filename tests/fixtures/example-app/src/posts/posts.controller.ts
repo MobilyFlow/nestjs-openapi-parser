@@ -16,6 +16,8 @@ export class PostsController {
 
   /**
    * Create a post and return the created `<BlogPost>` with its generated `<id>`.
+   *
+   * @Name Publish a post
    */
   @Post()
   create(@Body() _dto: CreatePostDto): Promise<BlogPost> {

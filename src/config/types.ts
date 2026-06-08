@@ -42,6 +42,20 @@ export interface SecurityContext {
   registeredSchemes: string[];
 }
 
+/**
+ * Context passed to the `endpointSummary` hook for a single controller method.
+ * Return a string to use as the operation `summary`, or `null`/`undefined` to
+ * fall back to `defaultSummary`. A method-level `@Name` JSDoc tag overrides both.
+ */
+export interface EndpointSummaryContext {
+  controller: ClassDeclaration;
+  method: MethodDeclaration;
+  /** Lowercase HTTP verb (`get`, `post`, `put`, `delete`, `patch`). */
+  httpMethod: string;
+  /** The default summary: the method name humanized (PascalCase split + capitalized). */
+  defaultSummary: string;
+}
+
 export interface NestParserHooks {
   /**
    * Decide the schema of the response body for an endpoint. If not provided, the
@@ -60,6 +74,13 @@ export interface NestParserHooks {
    * Override the default tag derivation (strip `Controller` suffix from class name).
    */
   controllerTag?: (clazz: ClassDeclaration) => string;
+
+  /**
+   * Build the `summary` for an endpoint. Return `null`/`undefined` to fall back
+   * to the default (the method name humanized). A method-level `@Name` JSDoc tag
+   * overrides both this hook and the default.
+   */
+  endpointSummary?: (ctx: EndpointSummaryContext) => string | null | undefined;
 }
 
 export interface OpenApiConfig {

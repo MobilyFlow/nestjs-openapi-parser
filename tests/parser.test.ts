@@ -1100,3 +1100,79 @@ describe('config fallback (no config file)', () => {
     }
   });
 });
+
+describe('endpoint summary', () => {
+  async function summaries(hooks?: NestParserConfig['hooks']): Promise<Record<string, string>> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-summary-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'items.controller.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          '',
+          "@Controller('items')",
+          'export class ItemsController {',
+          '  @Get()',
+          '  findOne(): void {}',
+          '',
+          '  /** @Name Custom label */',
+          "  @Get('named')",
+          '  getNamed(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const doc = await parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'I', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+          hooks,
+        },
+      });
+      const result: Record<string, string> = {};
+      for (const [p, ops] of Object.entries(doc.paths)) {
+        const op = ops.get as { summary?: string } | undefined;
+        if (op?.summary) result[p] = op.summary;
+      }
+      return result;
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('defaults to the humanized method name', async () => {
+    expect((await summaries())['/items']).toBe('Find One');
+  });
+
+  it('a method-level @Name overrides the default', async () => {
+    expect((await summaries())['/items/named']).toBe('Custom label');
+  });
+
+  it('the endpointSummary hook overrides the default but not @Name', async () => {
+    const s = await summaries({
+      endpointSummary: ({ httpMethod, defaultSummary }) =>
+        `${httpMethod.toUpperCase()} ${defaultSummary}`,
+    });
+    expect(s['/items']).toBe('GET Find One');
+    expect(s['/items/named']).toBe('Custom label');
+  });
+
+  it('falls back to the default when the hook returns null', async () => {
+    expect((await summaries({ endpointSummary: () => null }))['/items']).toBe('Find One');
+  });
+});

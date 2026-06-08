@@ -12,6 +12,7 @@
         "tags": [
           "Auth"
         ],
+        "summary": "Login",
         "description": "Exchange credentials for an access token.",
         "requestBody": {
           "required": true,
@@ -60,6 +61,7 @@
         "tags": [
           "System Health"
         ],
+        "summary": "Check",
         "description": "Liveness probe.",
         "responses": {
           "200": {
@@ -98,6 +100,7 @@
         "tags": [
           "Posts"
         ],
+        "summary": "List",
         "description": "Paginated list of posts, optionally filtered.",
         "parameters": [
           {
@@ -203,6 +206,7 @@
         "tags": [
           "Posts"
         ],
+        "summary": "Publish a post",
         "description": "Create a post and return the created `<BlogPost>` with its generated `<id>`.",
         "requestBody": {
           "required": true,
@@ -255,6 +259,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "List",
         "description": "Paginated list of users.",
         "parameters": [
           {
@@ -336,6 +341,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Create",
         "requestBody": {
           "required": true,
           "content": {
@@ -387,6 +393,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Find One",
         "description": "Fetch a single user by UUID.",
         "parameters": [
           {
@@ -438,6 +445,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Update",
         "parameters": [
           {
             "name": "id",
@@ -498,6 +506,7 @@
         "tags": [
           "Users"
         ],
+        "summary": "Remove",
         "parameters": [
           {
             "name": "id",
