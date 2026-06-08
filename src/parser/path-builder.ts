@@ -104,7 +104,14 @@ export class PathBuilder {
       const fullPath = this.toOpenApiPath(this.joinPath(this.globalPrefix, basePath, routePath));
 
       const methodTag = getTags(method).Tag?.[0] ?? tag;
-      const operation = this.buildOperation(controller, method, httpMethod, methodTag);
+      const templateParams = this.pathParamNames(fullPath);
+      const operation = this.buildOperation(
+        controller,
+        method,
+        httpMethod,
+        methodTag,
+        templateParams,
+      );
 
       this.paths[fullPath] ??= {};
       this.paths[fullPath][httpMethod] = operation;
@@ -116,6 +123,7 @@ export class PathBuilder {
     method: MethodDeclaration,
     httpMethod: string,
     tag: string,
+    pathParamNames: string[],
   ): Record<string, unknown> {
     const operation: Record<string, unknown> = {
       operationId: this.uniqueOperationId(tag, method.getName()),
@@ -131,7 +139,12 @@ export class PathBuilder {
       : undefined;
     if (desc) operation.description = desc;
 
-    const parameters: Record<string, unknown>[] = [];
+    // Collect explicit @Param('name') schemas keyed by name, plus query/header
+    // params in declaration order. Path params are emitted from the route
+    // template below, not from this loop, so the spec can never reference a
+    // `{param}` that has no parameter object.
+    const explicitPathParams = new Map<string, OpenApiSchema>();
+    const otherParameters: Record<string, unknown>[] = [];
     let requestBody: Record<string, unknown> | undefined;
 
     for (const param of method.getParameters()) {
@@ -143,23 +156,19 @@ export class PathBuilder {
       switch (decorator.getName()) {
         case 'Param': {
           const name = this.stringArg(decorator, 0);
-          if (name) {
-            parameters.push({
-              name,
-              in: 'path',
-              required: true,
-              schema: this.paramSchema(decorator, param),
-            });
-          }
+          // A @Param('name') whose name isn't in the route template can't be a
+          // valid path parameter, so it's recorded here and only used if the
+          // template actually declares it.
+          if (name) explicitPathParams.set(name, this.paramSchema(decorator, param));
           break;
         }
         case 'Query':
-          parameters.push(...this.buildQueryParameters(decorator, param));
+          otherParameters.push(...this.buildQueryParameters(decorator, param));
           break;
         case 'Headers': {
           const headerName = this.stringArg(decorator, 0);
           if (headerName) {
-            parameters.push({
+            otherParameters.push({
               name: headerName,
               in: 'header',
               required: false,
@@ -173,6 +182,18 @@ export class PathBuilder {
           break;
       }
     }
+
+    // Every `{param}` in the route template must have a path-parameter entry, in
+    // template order — even when the handler never binds it with @Param('name')
+    // (e.g. it uses `@Param() all`, `@Req()`, or the name simply doesn't match).
+    // Such placeholders default to `string`.
+    const parameters: Record<string, unknown>[] = pathParamNames.map((name) => ({
+      name,
+      in: 'path',
+      required: true,
+      schema: explicitPathParams.get(name) ?? { type: 'string' },
+    }));
+    parameters.push(...otherParameters);
 
     if (parameters.length) operation.parameters = parameters;
     if (requestBody) operation.requestBody = requestBody;
@@ -307,5 +328,19 @@ export class PathBuilder {
     let out = routePath.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
     if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
     return out;
+  }
+
+  /** Names of the `{param}` placeholders in an OpenAPI path, in order, deduped. */
+  private pathParamNames(openApiPath: string): string[] {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (const match of openApiPath.matchAll(/\{([^}]+)\}/g)) {
+      const name = match[1];
+      if (!seen.has(name)) {
+        seen.add(name);
+        names.push(name);
+      }
+    }
+    return names;
   }
 }

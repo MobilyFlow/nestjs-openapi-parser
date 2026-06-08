@@ -303,3 +303,98 @@ describe('output ordering', () => {
     }
   });
 });
+
+describe('path parameters from the route template', () => {
+  type PathParam = { name: string; in: string; required: boolean; schema: Record<string, unknown> };
+  const paramsOf = (doc: OpenApiDocument, path: string): PathParam[] =>
+    ((doc.paths[path]?.get as { parameters?: PathParam[] })?.parameters ?? []).filter(
+      (p) => p.in === 'path',
+    );
+
+  // Build a throwaway controller and run the full pipeline over it.
+  function buildCatsDoc(): OpenApiDocument {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-pathparam-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: false,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'cats.controller.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          'declare function Param(name: string): ParameterDecorator;',
+          '',
+          "@Controller('cats')",
+          'export class CatsController {',
+          '  // `:id` with no @Param at all — must still produce an {id} path param.',
+          "  @Get(':id')",
+          '  findOne(): void {}',
+          '',
+          '  // Multiple placeholders, none bound — both must appear, in template order.',
+          "  @Get(':from/:to')",
+          '  range(): void {}',
+          '',
+          '  // Explicit @Param that matches the template.',
+          "  @Get('named/:slug')",
+          "  bySlug(@Param('slug') _slug: string): void {}",
+          '',
+          "  // @Param('wrong') doesn't match the template — ignored; {id} still emitted.",
+          "  @Get(':id/detail')",
+          "  detail(@Param('wrong') _x: string): void {}",
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Cats', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('synthesizes a string path param when the route declares one but no @Param binds it', () => {
+    const doc = buildCatsDoc();
+    expect(paramsOf(doc, '/cats/{id}')).toEqual([
+      { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+    ]);
+  });
+
+  it('emits every placeholder, in template order, for multi-param routes', () => {
+    const doc = buildCatsDoc();
+    expect(paramsOf(doc, '/cats/{from}/{to}')).toEqual([
+      { name: 'from', in: 'path', required: true, schema: { type: 'string' } },
+      { name: 'to', in: 'path', required: true, schema: { type: 'string' } },
+    ]);
+  });
+
+  it('uses the explicit @Param schema when its name matches the template', () => {
+    const doc = buildCatsDoc();
+    expect(paramsOf(doc, '/cats/named/{slug}')).toEqual([
+      { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+    ]);
+  });
+
+  it('ignores a @Param whose name is absent from the template, still emitting the placeholder', () => {
+    const doc = buildCatsDoc();
+    const params = paramsOf(doc, '/cats/{id}/detail');
+    expect(params.map((p) => p.name)).toEqual(['id']);
+    expect(params[0].schema).toEqual({ type: 'string' });
+  });
+});

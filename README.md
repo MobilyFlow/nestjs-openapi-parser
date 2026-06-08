@@ -193,6 +193,8 @@ HTTP-method decorators (and `@Controller`, `@Body`, `@Query`, `@Param`, `@Header
 
 Pipe detection is **textual** — it looks for `ParseUUIDPipe` / `ParseIntPipe` / `ParseBoolPipe` in the decorator's arguments source. Custom pipes fall back to the parameter's TypeScript type.
 
+**Path parameters always match the route template.** Every `:placeholder` in the route (`@Controller`, `@Get`, the global prefix) is emitted as a `required: true` path parameter, in template order — so the document is never invalid for a missing parameter object. When a `:placeholder` has a matching `@Param('placeholder')`, its schema (incl. pipe-derived `uuid`/`integer`/`boolean`) is used; otherwise — the handler reads `@Param() all`, `@Req()`, or the names simply don't line up — it defaults to `{ type: 'string' }`. A `@Param('x')` whose name isn't in the route template is ignored (it can't be a valid path parameter).
+
 ### Responses
 
 The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize with the [`buildResponseSchema`](#hooks-project-specific-glue) hook.
