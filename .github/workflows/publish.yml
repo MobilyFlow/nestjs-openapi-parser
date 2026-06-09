@@ -35,6 +35,7 @@ jobs:
     needs: check
     if: needs.check.outputs.exists == 'false'
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: write # push the version tag
       id-token: write # npm Trusted Publishing (OIDC) + provenance
@@ -51,6 +52,12 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Check formatting
+        run: yarn format:check
 
       - name: Build
         run: yarn build

@@ -1,6 +1,6 @@
 {
   "name": "nestjs-openapi-parser",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "CLI that parses a NestJS project with ts-morph and generates an OpenAPI document.",
   "license": "MIT",
   "type": "commonjs",
