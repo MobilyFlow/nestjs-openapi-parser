@@ -100,8 +100,13 @@ export class PathBuilder {
   private readonly paths: Record<string, Record<string, unknown>> = {};
   private readonly usedOperationIds = new Set<string>();
   private readonly tags = new Map<string, string | undefined>();
-  /** Distinct method-level `@Tag` names seen, declared in root after controllers. */
-  private readonly methodTagNames = new Set<string>();
+  /**
+   * Tag names actually referenced by an emitted operation — each operation's
+   * `@Tag`, or the controller tag it falls back to. A controller tag absent here
+   * is unused (e.g. its only method overrides it with its own `@Tag`) and so is
+   * not emitted in the root `tags[]`.
+   */
+  private readonly usedTagNames = new Set<string>();
   private readonly globalPrefix: string;
   private readonly hooks: NestParserHooks;
   private readonly registeredSchemes: string[];
@@ -127,23 +132,25 @@ export class PathBuilder {
     // Declare any method-level @Tag name no controller already declared, so the
     // operation's tag isn't dangling. Done after all controllers so a controller's
     // description always wins over a description-less method-tag placeholder.
-    for (const name of this.methodTagNames) {
+    for (const name of this.usedTagNames) {
       if (!this.tags.has(name)) this.tags.set(name, undefined);
     }
     return this.paths;
   }
 
   /**
-   * Root `tags[]` entries: one per distinct tag name in play. Controller tags
-   * (name from `@Tag`/the default-tag hook, description from the class JSDoc;
-   * first controller wins on a shared name) come first, then any method-level
-   * `@Tag` name a controller didn't already declare — description-less, since a
-   * method's JSDoc is its operation description, not a tag description.
+   * Root `tags[]` entries: one per tag name actually used by an operation.
+   * Controller tags (name from `@Tag`/the default-tag hook, description from the
+   * class JSDoc; first controller wins on a shared name) come first, then any
+   * method-level `@Tag` name a controller didn't already declare — description-
+   * less, since a method's JSDoc is its operation description, not a tag
+   * description. A controller tag no operation references (every method overrides
+   * it) is dropped, so empty controllers don't leak a dangling tag.
    */
   getTags(): { name: string; description?: string }[] {
-    return [...this.tags.entries()].map(([name, description]) =>
-      description ? { name, description } : { name },
-    );
+    return [...this.tags.entries()]
+      .filter(([name]) => this.usedTagNames.has(name))
+      .map(([name, description]) => (description ? { name, description } : { name }));
   }
 
   private processController(controller: ClassDeclaration): void {
@@ -186,7 +193,7 @@ export class PathBuilder {
         for (const route of routePaths) {
           const rawPath = this.joinPath(this.globalPrefix, base, route);
           for (const fullPath of this.expandRoutePaths(rawPath, controller, method)) {
-            this.methodTagNames.add(methodTag);
+            this.usedTagNames.add(methodTag);
             const templateParams = this.pathParamNames(fullPath);
             const operation = this.buildOperation(
               controller,

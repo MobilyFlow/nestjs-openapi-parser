@@ -735,6 +735,49 @@ describe('method-level @Tag declaration', () => {
     expect(doc.tags?.find((t) => t.name === 'Reports')?.description).toBe('Reporting operations.');
     expect(doc.tags?.find((t) => t.name === 'Catalog')?.description).toBe('Catalog operations.');
   });
+
+  it("does not emit a controller's derived tag when every operation overrides it", async () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-emptytag-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', experimentalDecorators: true },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      // RootController's only endpoint carries its own `@Tag Health`, so the
+      // derived `Root` tag is never used and must not leak into root tags[].
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          "@Controller('/')",
+          'export class RootController {',
+          '  /** @Tag Health */',
+          "  @Get('health')",
+          '  health(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      const doc = await parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Root', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+
+      expect(doc.tags?.map((t) => t.name)).toEqual(['Health']);
+      expect(opTags(doc, '/health')).toEqual(['Health']);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('optional & unsupported route patterns', () => {
