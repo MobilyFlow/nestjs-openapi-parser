@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NestParserConfig, PagesConfig } from '../config/types';
-import type { OpenApiDocument, OpenApiTagGroup } from '../types/openapi';
+import type { OpenApiDocument, OpenApiSecurityScheme, OpenApiTagGroup } from '../types/openapi';
 import { validateDocument } from '../validate';
 import { AstIndex } from './ast-index';
 import { PathBuilder } from './path-builder';
@@ -60,7 +60,10 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
     schemaBuilder.registerRef(name);
   }
 
-  const registeredSchemes = Object.keys(config.openapi.securitySchemes ?? {});
+  // Drop null/undefined entries so a scheme can be declared conditionally
+  // without leaking an empty key into the output or the default security policy.
+  const securitySchemes = definedSecuritySchemes(config.openapi.securitySchemes);
+  const registeredSchemes = Object.keys(securitySchemes);
 
   const pathBuilder = new PathBuilder(index, schemaBuilder, {
     globalPrefix: config.project?.globalPrefix,
@@ -86,9 +89,7 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
     paths,
     components: {
       schemas: schemaBuilder.getSchemas(),
-      ...(config.openapi.securitySchemes
-        ? { securitySchemes: config.openapi.securitySchemes }
-        : {}),
+      ...(registeredSchemes.length > 0 ? { securitySchemes } : {}),
     },
   };
 
@@ -116,6 +117,17 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
 
 function formatScopes(scopes: Set<string>): string {
   return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
+}
+
+/** Security schemes with `null`/`undefined` entries removed. */
+function definedSecuritySchemes(
+  schemes: Record<string, OpenApiSecurityScheme | null | undefined> | undefined,
+): Record<string, OpenApiSecurityScheme> {
+  const out: Record<string, OpenApiSecurityScheme> = {};
+  for (const [name, scheme] of Object.entries(schemes ?? {})) {
+    if (scheme != null) out[name] = scheme;
+  }
+  return out;
 }
 
 /**

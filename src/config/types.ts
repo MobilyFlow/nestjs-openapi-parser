@@ -88,7 +88,13 @@ export interface OpenApiConfig {
   version: string;
   description?: string;
   servers?: OpenApiServer[];
-  securitySchemes?: Record<string, OpenApiSecurityScheme>;
+  /**
+   * Named security schemes. Entries whose value is `null`/`undefined` are
+   * skipped — so a scheme can be included conditionally
+   * (`bearerAuth: enabled ? {...} : undefined`) without it leaking into the
+   * output or the default security policy.
+   */
+  securitySchemes?: Record<string, OpenApiSecurityScheme | null | undefined>;
   /** Document-level extras spliced onto `info`. */
   info?: Partial<OpenApiInfo>;
 }

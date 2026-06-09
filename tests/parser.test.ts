@@ -1471,3 +1471,66 @@ describe('pages (x-tagGroups Markdown pages)', () => {
     );
   });
 });
+
+describe('securitySchemes with null/undefined entries', () => {
+  async function buildDoc(): Promise<OpenApiDocument> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-secsch-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', experimentalDecorators: true },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          "@Controller('items')",
+          'export class ItemsController {',
+          '  @Get()',
+          '  list(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      // No resolveSecurity hook → the default policy applies every *registered*
+      // scheme, so a dropped scheme must not appear in the operation's security.
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: {
+            title: 'Items',
+            version: '1.0.0',
+            securitySchemes: {
+              bearerAuth: { type: 'http', scheme: 'bearer' },
+              apiKey: undefined,
+              legacy: null,
+            },
+          },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('omits nullish schemes from components.securitySchemes', async () => {
+    const doc = await buildDoc();
+    expect(doc.components?.securitySchemes).toEqual({
+      bearerAuth: { type: 'http', scheme: 'bearer' },
+    });
+  });
+
+  it('does not apply a dropped scheme in the default security policy', async () => {
+    const doc = await buildDoc();
+    expect((doc.paths['/items'].get as { security: unknown }).security).toEqual([
+      { bearerAuth: [] },
+    ]);
+  });
+});
