@@ -156,19 +156,22 @@ function applyPages(
 }
 
 /**
- * Read a Markdown page: the title is the first line when it's an ATX heading
- * (`# Title`), otherwise the file's base name without extension. The content is
- * the whole file, verbatim.
+ * Read a Markdown page. When the first line is an ATX heading (`# Title`), that
+ * is the title and the line is dropped from the content (the tag name already
+ * shows it, so keeping it would render the title twice). Otherwise the title is
+ * the file's base name without extension and the body is kept whole. The content
+ * is `trimStart`ed either way.
  */
 function readPage(filePath: string): { title: string; content: string } {
-  let content: string;
+  let raw: string;
   try {
-    content = fs.readFileSync(filePath, 'utf-8');
+    raw = fs.readFileSync(filePath, 'utf-8');
   } catch {
     throw new Error(`pages: Markdown file not found or unreadable: ${filePath}`);
   }
-  const firstLine = content.split('\n', 1)[0]?.trim() ?? '';
-  const heading = /^#{1,6}\s+(.+?)\s*$/.exec(firstLine);
+  const lines = raw.split('\n');
+  const heading = /^#{1,6}\s+(.+?)\s*$/.exec(lines[0]?.trim() ?? '');
   const title = heading ? heading[1].trim() : path.basename(filePath).replace(/\.[^.]+$/, '');
-  return { title, content };
+  const content = heading ? lines.slice(1).join('\n') : raw;
+  return { title, content: content.trimStart() };
 }

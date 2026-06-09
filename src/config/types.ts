@@ -134,7 +134,8 @@ export interface PagesConfig {
   /**
    * Markdown files rendered as standalone pages. Each path is relative to the
    * project root or absolute. The page title is the file's first `# heading`
-   * line (else the file name); the whole file body is the page content.
+   * line (else the file name); that heading line is dropped from the content so
+   * the title isn't rendered twice. The remaining body is `trimStart`ed.
    */
   files: string[];
   /**

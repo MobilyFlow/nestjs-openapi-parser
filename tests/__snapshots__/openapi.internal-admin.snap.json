@@ -926,7 +926,7 @@
   "tags": [
     {
       "name": "Getting Started",
-      "description": "# Getting Started\n\nWelcome to the **Example API**. This page is a standalone Markdown document\nrendered ahead of the API reference via `pages` in `nestparser.config.ts`.\n\n## Authentication\n\nMost endpoints require a bearer token:\n\n```http\nAuthorization: Bearer <your-token>\n```\n\nEndpoints marked public (e.g. login, health) need no token.\n\n## Conventions\n\n- Every response is wrapped in a `{ success, message, data }` envelope.\n- List endpoints return a `pagination` object alongside `data`.\n"
+      "description": "Welcome to the **Example API**. This page is a standalone Markdown document\nrendered ahead of the API reference via `pages` in `nestparser.config.ts`.\n\n## Authentication\n\nMost endpoints require a bearer token:\n\n```http\nAuthorization: Bearer <your-token>\n```\n\nEndpoints marked public (e.g. login, health) need no token.\n\n## Conventions\n\n- Every response is wrapped in a `{ success, message, data }` envelope.\n- List endpoints return a `pagination` object alongside `data`.\n"
     },
     {
       "name": "Admin",

@@ -1425,10 +1425,9 @@ describe('pages (x-tagGroups Markdown pages)', () => {
 
   it('titles a page from its first `#` heading, else the file name', async () => {
     const doc = await buildDoc({ files: ['docs/intro.md', 'docs/no-title.md'] });
-    expect(doc.tags?.find((t) => t.name === 'Getting Started')?.description).toBe(
-      '# Getting Started\n\nWelcome.\n',
-    );
-    // No heading → file base name (extension stripped); full body as content.
+    // Heading line is dropped (it becomes the title) and the body is trimStarted.
+    expect(doc.tags?.find((t) => t.name === 'Getting Started')?.description).toBe('Welcome.\n');
+    // No heading → file base name (extension stripped); body kept whole.
     expect(doc.tags?.find((t) => t.name === 'no-title')?.description).toBe(
       'Just text, no heading.\n',
     );
