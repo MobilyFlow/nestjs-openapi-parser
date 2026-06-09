@@ -59,20 +59,37 @@ HTTP-method decorators (and `@Controller`, `@Body`, `@Query`, `@Param`, `@Header
 
 ## Parameters & request body
 
-| Source                        | Becomes                                                         |
-| ----------------------------- | --------------------------------------------------------------- |
-| `@Param('id')`                | path parameter (`required: true`)                               |
-| `@Param('id', ParseUUIDPipe)` | `{ type: 'string', format: 'uuid' }`                            |
-| `@Param('id', ParseIntPipe)`  | `{ type: 'integer' }`                                           |
-| `@Param('id', ParseBoolPipe)` | `{ type: 'boolean' }`                                           |
-| `@Query('q')`                 | named query parameter                                           |
-| `@Query() dto: SomeQueryDto`  | expanded into individual query parameters from the DTO          |
-| `@Body() dto: SomeBodyDto`    | `requestBody` with `application/json` schema (`required: true`) |
-| `@Headers('x-foo')`           | header parameter (`type: string`)                               |
+| Source                                       | Becomes                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------- |
+| `@Param('id')`                               | path parameter (`required: true`)                                         |
+| `@Param('id', ParseUUIDPipe)`                | `{ type: 'string', format: 'uuid' }`                                      |
+| `@Param('id', ParseIntPipe)`                 | `{ type: 'integer' }`                                                     |
+| `@Param('id', ParseBoolPipe)`                | `{ type: 'boolean' }`                                                     |
+| `@Query('q')`                                | named query parameter                                                     |
+| `@Query() dto: SomeQueryDto`                 | expanded into individual query parameters from the DTO                    |
+| `@Body() dto: SomeBodyDto`                   | `requestBody` with `application/json` schema (`required: true`)           |
+| `@Headers('x-foo')`                          | header parameter (`type: string`)                                         |
+| `@UploadedFile()` + `FileInterceptor('f')`   | `multipart/form-data` body with `f: { type: 'string', format: 'binary' }` |
+| `@UploadedFiles()` + `FilesInterceptor('f')` | the same, as `{ type: 'array', items: { …binary } }`                      |
 
 Pipe detection is **textual** — it looks for `ParseUUIDPipe` / `ParseIntPipe` / `ParseBoolPipe` in the decorator's arguments source. Custom pipes fall back to the parameter's TypeScript type.
 
 **Path parameters always match the route template.** Every `:placeholder` in the route (`@Controller`, `@Get`, the global prefix) is emitted as a `required: true` path parameter, in template order — so the document is never invalid for a missing parameter object. When a `:placeholder` has a matching `@Param('placeholder')`, its schema (incl. pipe-derived `uuid`/`integer`/`boolean`) is used; otherwise — the handler reads `@Param() all`, `@Req()`, or the names simply don't line up — it defaults to `{ type: 'string' }`. A `@Param('x')` whose name isn't in the route template is ignored (it can't be a valid path parameter).
+
+### File uploads
+
+An endpoint with `@UploadedFile()` / `@UploadedFiles()` produces a `multipart/form-data` request body. The file field's **name** comes from the matching `FileInterceptor('field')` / `FilesInterceptor('field')` in `@UseInterceptors` (falling back to the parameter name if no interceptor is recognized), and its schema is `{ type: 'string', format: 'binary' }` — wrapped in an array for `@UploadedFiles` / `FilesInterceptor`. Any `@Body()` DTO on the same handler is **inlined** alongside the file field(s) in the one multipart object (just like `@Query() dto`). The media type defaults to `multipart/form-data` whenever a file is present; an explicit `@Accept` still overrides it.
+
+```ts
+@Post('upload')
+@UseInterceptors(FileInterceptor('file'))
+uploadFile(
+  @Body() dto: UploadMonitoringDTO,            // form fields, inlined
+  @UploadedFile() file: Express.Multer.File, // file: { type: string, format: binary }
+) { /* ... */ }
+```
+
+The file is marked `required`. `FileFieldsInterceptor` (multiple named fields) isn't parsed yet — fall back to declaring the field via a JSDoc-described `@Body()` DTO if you need it.
 
 ## Responses
 

@@ -24,6 +24,10 @@ const HTTP_METHODS: Record<string, string> = {
 // it with `@Accept` (request) or `@ContentType` (response) in its JSDoc.
 const DEFAULT_MEDIA_TYPE = 'application/json';
 
+// Default request media type for endpoints with a file upload (binary data
+// can't ride in JSON), used unless `@Accept` says otherwise.
+const MULTIPART_MEDIA_TYPE = 'multipart/form-data';
+
 // NestJS's `HttpStatus` enum (from `@nestjs/common`) member name → numeric code.
 // Used to resolve `@HttpCode(HttpStatus.NO_CONTENT)` statically, since we can't
 // import `@nestjs/common` to read the value at runtime.
@@ -233,7 +237,6 @@ export class PathBuilder {
     // `@Accept <type>` overrides the request body media type; `@ContentType
     // <type>` overrides the response media type. Both default to JSON.
     const methodTags = getTags(method);
-    const acceptMediaType = methodTags.Accept?.[0] || DEFAULT_MEDIA_TYPE;
     const responseMediaType = methodTags.ContentType?.[0] || DEFAULT_MEDIA_TYPE;
 
     const rawDesc = method.getJsDocs()[0]?.getCommentText();
@@ -251,7 +254,7 @@ export class PathBuilder {
     // `{param}` that has no parameter object.
     const explicitPathParams = new Map<string, OpenApiSchema>();
     const otherParameters: Record<string, unknown>[] = [];
-    let requestBody: Record<string, unknown> | undefined;
+    let bodyParam: ParameterDeclaration | undefined;
 
     for (const param of method.getParameters()) {
       const decorator = param
@@ -284,10 +287,23 @@ export class PathBuilder {
           break;
         }
         case 'Body':
-          requestBody = this.buildRequestBody(param, acceptMediaType);
+          bodyParam = param;
           break;
       }
     }
+
+    // File uploads (@UploadedFile/@UploadedFiles, named by their FileInterceptor)
+    // become `format: binary` form fields, merged with any @Body() fields into a
+    // single multipart schema. With a file present the request defaults to
+    // multipart/form-data; `@Accept` still overrides it.
+    const fileFields = this.collectFileFields(method);
+    const acceptMediaType =
+      methodTags.Accept?.[0] || (fileFields.length ? MULTIPART_MEDIA_TYPE : DEFAULT_MEDIA_TYPE);
+    const requestBody = fileFields.length
+      ? this.buildUploadRequestBody(bodyParam, fileFields, acceptMediaType)
+      : bodyParam
+        ? this.buildRequestBody(bodyParam, acceptMediaType)
+        : undefined;
 
     // Every `{param}` in the route template must have a path-parameter entry, in
     // template order — even when the handler never binds it with @Param('name')
@@ -361,6 +377,80 @@ export class PathBuilder {
     mediaType: string,
   ): Record<string, unknown> {
     const schema = this.schemaBuilder.typeToSchema(param.getType());
+    return { required: true, content: { [mediaType]: { schema } } };
+  }
+
+  /**
+   * The file upload form fields of an endpoint. Names come from the method's
+   * `@UseInterceptors` (`FileInterceptor('x')` → single, `FilesInterceptor('x')`
+   * → array). When no recognized interceptor is present, falls back to
+   * `@UploadedFile`/`@UploadedFiles` parameters — named by their string argument,
+   * else the parameter name.
+   */
+  private collectFileFields(method: MethodDeclaration): { name: string; multiple: boolean }[] {
+    const fromInterceptors = this.interceptorFileFields(method);
+    if (fromInterceptors.length) return fromInterceptors;
+
+    const fields: { name: string; multiple: boolean }[] = [];
+    for (const param of method.getParameters()) {
+      const dec = param
+        .getDecorators()
+        .find((d) => d.getName() === 'UploadedFile' || d.getName() === 'UploadedFiles');
+      if (!dec) continue;
+      fields.push({
+        name: this.stringArg(dec, 0) ?? param.getName(),
+        multiple: dec.getName() === 'UploadedFiles',
+      });
+    }
+    return fields;
+  }
+
+  private interceptorFileFields(method: MethodDeclaration): { name: string; multiple: boolean }[] {
+    const dec = method.getDecorator('UseInterceptors');
+    if (!dec) return [];
+    const fields: { name: string; multiple: boolean }[] = [];
+    for (const arg of dec.getArguments()) {
+      if (!Node.isCallExpression(arg)) continue;
+      const fn = arg.getExpression().getText();
+      const first = arg.getArguments()[0];
+      if (!first || !Node.isStringLiteral(first)) continue;
+      if (fn === 'FileInterceptor') fields.push({ name: first.getLiteralValue(), multiple: false });
+      else if (fn === 'FilesInterceptor')
+        fields.push({ name: first.getLiteralValue(), multiple: true });
+    }
+    return fields;
+  }
+
+  /**
+   * Build a multipart request body merging the `@Body()` DTO's fields (inlined,
+   * like `@Query() dto`) with the upload's `format: binary` file field(s).
+   */
+  private buildUploadRequestBody(
+    bodyParam: ParameterDeclaration | undefined,
+    fileFields: { name: string; multiple: boolean }[],
+    mediaType: string,
+  ): Record<string, unknown> {
+    const properties: Record<string, OpenApiSchema> = {};
+    const required: string[] = [];
+
+    if (bodyParam) {
+      const className = AstIndex.symbolName(bodyParam.getType());
+      const clazz = className ? this.index.getClass(className) : undefined;
+      if (clazz) {
+        const members = this.schemaBuilder.buildMembers(clazz);
+        Object.assign(properties, members.properties);
+        required.push(...members.required);
+      }
+    }
+
+    for (const file of fileFields) {
+      const binary: OpenApiSchema = { type: 'string', format: 'binary' };
+      properties[file.name] = file.multiple ? { type: 'array', items: binary } : binary;
+      required.push(file.name);
+    }
+
+    const schema: OpenApiSchema = { type: 'object', properties };
+    if (required.length) schema.required = required;
     return { required: true, content: { [mediaType]: { schema } } };
   }
 

@@ -1297,3 +1297,79 @@ describe('@Accept / @ContentType media types', () => {
     expect(Object.keys(create.responses['201'].content!)).toEqual(['application/json']);
   });
 });
+
+describe('file uploads (@UploadedFile / interceptors)', () => {
+  async function buildDoc(): Promise<OpenApiDocument> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-upload-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', experimentalDecorators: true },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Post(path?: string): MethodDecorator;',
+          'declare function Body(): ParameterDecorator;',
+          'declare function UploadedFile(...a: unknown[]): ParameterDecorator;',
+          'declare function UploadedFiles(...a: unknown[]): ParameterDecorator;',
+          'declare function UseInterceptors(...a: unknown[]): MethodDecorator;',
+          'declare function FileInterceptor(field: string): unknown;',
+          'declare function FilesInterceptor(field: string): unknown;',
+          '',
+          'export class UploadDto { note!: string; }',
+          '',
+          "@Controller('files')",
+          'export class FilesController {',
+          "  @Post('one')",
+          "  @UseInterceptors(FileInterceptor('logFile'))",
+          '  one(@Body() _dto: UploadDto, @UploadedFile() _f: unknown): void {}',
+          '',
+          "  @Post('many')",
+          "  @UseInterceptors(FilesInterceptor('photos'))",
+          '  many(@UploadedFiles() _f: unknown): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Files', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  type Body = { content: Record<string, { schema: Record<string, unknown> }> };
+  const body = (doc: OpenApiDocument, p: string): Body =>
+    (doc.paths[p]?.post as { requestBody: Body }).requestBody;
+
+  it('emits a binary file field merged with @Body fields under multipart/form-data', async () => {
+    const b = body(await buildDoc(), '/files/one');
+    expect(Object.keys(b.content)).toEqual(['multipart/form-data']);
+    const schema = b.content['multipart/form-data'].schema;
+    expect(schema.properties).toEqual({
+      note: { type: 'string' },
+      logFile: { type: 'string', format: 'binary' },
+    });
+    expect(schema.required).toEqual(['note', 'logFile']);
+  });
+
+  it('represents FilesInterceptor / @UploadedFiles as an array of binary', async () => {
+    const b = body(await buildDoc(), '/files/many');
+    const schema = b.content['multipart/form-data'].schema;
+    expect(schema.properties).toEqual({
+      photos: { type: 'array', items: { type: 'string', format: 'binary' } },
+    });
+  });
+});
