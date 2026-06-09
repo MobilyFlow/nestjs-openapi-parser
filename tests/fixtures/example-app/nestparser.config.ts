@@ -17,6 +17,11 @@ export default defineConfig({
     globalPrefix: 'api',
   },
 
+  // Standalone Markdown page rendered ahead of the API reference via x-tagGroups.
+  pages: {
+    files: ['docs/getting-started.md'],
+  },
+
   hooks: {
     // Global response envelope: { success, message, data?, pagination? }.
     buildResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {

@@ -9,6 +9,7 @@ export type {
   OpenApiConfig,
   ProjectConfig,
   ConventionsConfig,
+  PagesConfig,
   ResponseSchemaContext,
   SecurityContext,
   EndpointSummaryContext,
@@ -31,4 +32,5 @@ export type {
   OpenApiSchema,
   OpenApiSecurityScheme,
   OpenApiSecurityRequirement,
+  OpenApiTagGroup,
 } from './types/openapi';

@@ -34,12 +34,33 @@ export default defineConfig({
 
   scopes: [], // see "Documentation variants" below
   additionalModels: [], // force-include unreachable models — see docs/parser.md
+  pages: { files: ['./docs/getting-started.md'] }, // see "Markdown pages" below
 
   hooks: {
     // see "Hooks"
   },
 });
 ```
+
+## Markdown pages — `pages`
+
+Render standalone Markdown files as documentation pages ahead of the API reference (via `x-tagGroups`, which Scalar and Redoc display in the sidebar, right under the Introduction):
+
+```ts
+defineConfig({
+  // ...
+  pages: {
+    files: ['./docs/getting-started.md', './docs/authentication.md'],
+    group: 'Documentation', // sidebar heading for the pages (default)
+    apiGroup: 'API', // sidebar heading for the endpoints (default)
+  },
+});
+```
+
+- Each path is resolved relative to the project root (or absolute). A missing file fails the build.
+- The page **title** is the file's first line when it's a `#` heading, otherwise the file name (without extension). The **whole file body** becomes the page content.
+- Pages are emitted first, so they appear at the top of the sidebar.
+- Because `x-tagGroups` hides any tag not in a group, the API's own operation tags are automatically gathered into the `apiGroup` section — so endpoints stay visible.
 
 ## Documentation variants — `@Scope`
 

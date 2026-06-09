@@ -130,11 +130,37 @@ export interface ConventionsConfig {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ModelConstructor = abstract new (...args: any[]) => unknown;
 
+export interface PagesConfig {
+  /**
+   * Markdown files rendered as standalone pages. Each path is relative to the
+   * project root or absolute. The page title is the file's first `# heading`
+   * line (else the file name); the whole file body is the page content.
+   */
+  files: string[];
+  /**
+   * Sidebar heading for the Markdown pages section, placed first (right under
+   * the Introduction). Defaults to `Documentation`.
+   */
+  group?: string;
+  /**
+   * Sidebar heading that groups the API's operation tags. Required because
+   * `x-tagGroups` hides any ungrouped tag, so the API tags must be grouped too.
+   * Defaults to `API`.
+   */
+  apiGroup?: string;
+}
+
 export interface NestParserConfig {
   openapi: OpenApiConfig;
   project?: ProjectConfig;
   conventions?: ConventionsConfig;
   hooks?: NestParserHooks;
+  /**
+   * Standalone Markdown pages emitted ahead of the API reference via
+   * `x-tagGroups` (rendered by Scalar/Redoc). Omit to emit no pages and no
+   * `x-tagGroups` at all.
+   */
+  pages?: PagesConfig;
   /**
    * Class references to force-include in `components.schemas`, even when no
    * endpoint reaches them. Pass the class itself (not its name) — we resolve

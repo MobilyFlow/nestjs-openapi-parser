@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { AstIndex, SchemaBuilder, loadConfig, parseNestProject } from '../src/lib';
-import type { ModelConstructor, NestParserConfig } from '../src/lib';
+import type { ModelConstructor, NestParserConfig, PagesConfig } from '../src/lib';
 import type { OpenApiDocument } from '../src/types/openapi';
 
 // parseNestProject self-validates via a native dynamic import of an ESM-only
@@ -227,7 +227,14 @@ describe('output ordering', () => {
       '/api/users',
       '/api/users/{id}',
     ]);
-    expect(document.tags?.map((t) => t.name)).toEqual(['Auth', 'System Health', 'Posts', 'Users']);
+    // The `pages` doc tag is prepended ahead of the controller tags.
+    expect(document.tags?.map((t) => t.name)).toEqual([
+      'Getting Started',
+      'Auth',
+      'System Health',
+      'Posts',
+      'Users',
+    ]);
     expect(Object.keys(document.components?.schemas ?? {})).toEqual([
       'LoginDto',
       'LoginResponseDto',
@@ -1371,5 +1378,92 @@ describe('file uploads (@UploadedFile / interceptors)', () => {
     expect(schema.properties).toEqual({
       photos: { type: 'array', items: { type: 'string', format: 'binary' } },
     });
+  });
+});
+
+describe('pages (x-tagGroups Markdown pages)', () => {
+  async function buildDoc(pages?: PagesConfig): Promise<OpenApiDocument> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-pages-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.mkdirSync(path.join(tmp, 'docs'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', experimentalDecorators: true },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          "@Controller('items')",
+          'export class ItemsController {',
+          '  @Get()',
+          '  list(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      fs.writeFileSync(path.join(tmp, 'docs', 'intro.md'), '# Getting Started\n\nWelcome.\n');
+      fs.writeFileSync(path.join(tmp, 'docs', 'no-title.md'), 'Just text, no heading.\n');
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Items', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+          pages,
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('titles a page from its first `#` heading, else the file name', async () => {
+    const doc = await buildDoc({ files: ['docs/intro.md', 'docs/no-title.md'] });
+    expect(doc.tags?.find((t) => t.name === 'Getting Started')?.description).toBe(
+      '# Getting Started\n\nWelcome.\n',
+    );
+    // No heading → file base name (extension stripped); full body as content.
+    expect(doc.tags?.find((t) => t.name === 'no-title')?.description).toBe(
+      'Just text, no heading.\n',
+    );
+  });
+
+  it('emits page tags first, then x-tagGroups with pages before the API group', async () => {
+    const doc = await buildDoc({ files: ['docs/intro.md', 'docs/no-title.md'] });
+    expect(doc.tags?.map((t) => t.name)).toEqual(['Getting Started', 'no-title', 'Items']);
+    expect(doc['x-tagGroups']).toEqual([
+      { name: 'Documentation', tags: ['Getting Started', 'no-title'] },
+      { name: 'API', tags: ['Items'] },
+    ]);
+  });
+
+  it('honors custom group / apiGroup names', async () => {
+    const doc = await buildDoc({
+      files: ['docs/intro.md'],
+      group: 'Guides',
+      apiGroup: 'Endpoints',
+    });
+    expect(doc['x-tagGroups']).toEqual([
+      { name: 'Guides', tags: ['Getting Started'] },
+      { name: 'Endpoints', tags: ['Items'] },
+    ]);
+  });
+
+  it('emits no x-tagGroups when pages is absent', async () => {
+    const doc = await buildDoc();
+    expect(doc['x-tagGroups']).toBeUndefined();
+    expect(doc.tags?.map((t) => t.name)).toEqual(['Items']);
+  });
+
+  it('throws when a page file is missing', async () => {
+    await expect(buildDoc({ files: ['docs/missing.md'] })).rejects.toThrow(
+      /Markdown file not found/,
+    );
   });
 });

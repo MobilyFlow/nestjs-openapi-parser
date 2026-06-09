@@ -1,5 +1,7 @@
-import type { NestParserConfig } from '../config/types';
-import type { OpenApiDocument } from '../types/openapi';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { NestParserConfig, PagesConfig } from '../config/types';
+import type { OpenApiDocument, OpenApiTagGroup } from '../types/openapi';
 import { validateDocument } from '../validate';
 import { AstIndex } from './ast-index';
 import { PathBuilder } from './path-builder';
@@ -98,6 +100,8 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
     document.tags = tags;
   }
 
+  applyPages(document, projectRoot, config.pages, tags);
+
   const { valid, errors } = await validateDocument(document);
   if (!valid) {
     throw new Error(
@@ -112,4 +116,53 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
 
 function formatScopes(scopes: Set<string>): string {
   return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
+}
+
+/**
+ * Emit the configured Markdown pages as standalone, operation-less tags and wrap
+ * the whole document in `x-tagGroups` so Scalar/Redoc renders the pages first
+ * (right under the Introduction). Because `x-tagGroups` hides any ungrouped tag,
+ * the API's own operation tags are gathered into a second group.
+ */
+function applyPages(
+  document: OpenApiDocument,
+  projectRoot: string,
+  pages: PagesConfig | undefined,
+  operationTags: { name: string }[],
+): void {
+  if (!pages || pages.files.length === 0) return;
+
+  const pageTags = pages.files.map((file) => {
+    const { title, content } = readPage(path.resolve(projectRoot, file));
+    return { name: title, description: content };
+  });
+
+  // Pages render first; the existing operation tags keep their order after them.
+  document.tags = [...pageTags, ...(document.tags ?? [])];
+
+  const tagGroups: OpenApiTagGroup[] = [
+    { name: pages.group ?? 'Documentation', tags: pageTags.map((t) => t.name) },
+  ];
+  if (operationTags.length > 0) {
+    tagGroups.push({ name: pages.apiGroup ?? 'API', tags: operationTags.map((t) => t.name) });
+  }
+  document['x-tagGroups'] = tagGroups;
+}
+
+/**
+ * Read a Markdown page: the title is the first line when it's an ATX heading
+ * (`# Title`), otherwise the file's base name without extension. The content is
+ * the whole file, verbatim.
+ */
+function readPage(filePath: string): { title: string; content: string } {
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    throw new Error(`pages: Markdown file not found or unreadable: ${filePath}`);
+  }
+  const firstLine = content.split('\n', 1)[0]?.trim() ?? '';
+  const heading = /^#{1,6}\s+(.+?)\s*$/.exec(firstLine);
+  const title = heading ? heading[1].trim() : path.basename(filePath).replace(/\.[^.]+$/, '');
+  return { title, content };
 }
