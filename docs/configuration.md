@@ -60,7 +60,7 @@ defineConfig({
 - Each path is resolved relative to the project root (or absolute). A missing file fails the build.
 - The page **title** is the file's first line when it's a `#` heading, otherwise the file name (without extension). The **whole file body** becomes the page content.
 - Pages are emitted first, so they appear at the top of the sidebar.
-- Because `x-tagGroups` hides any tag not in a group, the API's own operation tags are automatically gathered into the `apiGroup` section — so endpoints stay visible.
+- **Grouping is opt-in.** `group` / `apiGroup` switch on `x-tagGroups` navigation (a missing one falls back to its default). Omit **both** and no `x-tagGroups` is emitted — the pages simply lead the flat tag list (still first, just without section headers). When grouping is on, the API's own operation tags are gathered into the `apiGroup` section, because `x-tagGroups` hides any ungrouped tag.
 
 ## Documentation variants — `@Scope`
 

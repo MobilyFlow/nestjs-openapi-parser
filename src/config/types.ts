@@ -138,14 +138,16 @@ export interface PagesConfig {
    */
   files: string[];
   /**
-   * Sidebar heading for the Markdown pages section, placed first (right under
-   * the Introduction). Defaults to `Documentation`.
+   * Sidebar heading for the Markdown pages section. Setting this (or `apiGroup`)
+   * switches on `x-tagGroups` grouped navigation; defaults to `Documentation`
+   * for the missing one. When BOTH are omitted no `x-tagGroups` is emitted — the
+   * pages simply lead the flat tag list (still rendered first, no group headers).
    */
   group?: string;
   /**
-   * Sidebar heading that groups the API's operation tags. Required because
-   * `x-tagGroups` hides any ungrouped tag, so the API tags must be grouped too.
-   * Defaults to `API`.
+   * Sidebar heading that groups the API's operation tags — needed once grouping
+   * is on, because `x-tagGroups` hides any ungrouped tag. Setting this (or
+   * `group`) switches on grouping; defaults to `API` for the missing one.
    */
   apiGroup?: string;
 }

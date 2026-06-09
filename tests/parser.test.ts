@@ -1434,12 +1434,17 @@ describe('pages (x-tagGroups Markdown pages)', () => {
     );
   });
 
-  it('emits page tags first, then x-tagGroups with pages before the API group', async () => {
+  it('prepends page tags but emits no x-tagGroups when neither group name is set', async () => {
     const doc = await buildDoc({ files: ['docs/intro.md', 'docs/no-title.md'] });
     expect(doc.tags?.map((t) => t.name)).toEqual(['Getting Started', 'no-title', 'Items']);
+    expect(doc['x-tagGroups']).toBeUndefined();
+  });
+
+  it('enables x-tagGroups when a section name is given, defaulting the other', async () => {
+    const doc = await buildDoc({ files: ['docs/intro.md', 'docs/no-title.md'], group: 'Guides' });
     expect(doc['x-tagGroups']).toEqual([
-      { name: 'Documentation', tags: ['Getting Started', 'no-title'] },
-      { name: 'API', tags: ['Items'] },
+      { name: 'Guides', tags: ['Getting Started', 'no-title'] },
+      { name: 'API', tags: ['Items'] }, // apiGroup falls back to its default
     ]);
   });
 

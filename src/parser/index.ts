@@ -140,6 +140,12 @@ function applyPages(
   // Pages render first; the existing operation tags keep their order after them.
   document.tags = [...pageTags, ...(document.tags ?? [])];
 
+  // `x-tagGroups` is opt-in: only when a section name is given. Without one the
+  // pages just lead the flat tag list — no "Documentation"/"API" headers, and no
+  // need to corral the API's own tags (x-tagGroups would otherwise hide any
+  // ungrouped tag). A missing counterpart name falls back to its default.
+  if (pages.group === undefined && pages.apiGroup === undefined) return;
+
   const tagGroups: OpenApiTagGroup[] = [
     { name: pages.group ?? 'Documentation', tags: pageTags.map((t) => t.name) },
   ];

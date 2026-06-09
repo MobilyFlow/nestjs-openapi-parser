@@ -17,9 +17,13 @@ export default defineConfig({
     globalPrefix: 'api',
   },
 
-  // Standalone Markdown page rendered ahead of the API reference via x-tagGroups.
+  // Standalone Markdown page rendered ahead of the API reference. `group`/
+  // `apiGroup` opt into grouped `x-tagGroups` navigation (omit both for a flat,
+  // pages-first tag list).
   pages: {
     files: ['docs/getting-started.md'],
+    group: 'Documentation',
+    apiGroup: 'API',
   },
 
   hooks: {
