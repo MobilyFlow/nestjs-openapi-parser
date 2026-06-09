@@ -2,7 +2,16 @@
   "name": "nestjs-openapi-parser",
   "version": "0.0.2",
   "description": "CLI that parses a NestJS project with ts-morph and generates an OpenAPI document.",
+  "author": "MobilyFlow",
   "license": "MIT",
+  "homepage": "https://github.com/MobilyFlow/nestjs-openapi-parser#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MobilyFlow/nestjs-openapi-parser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MobilyFlow/nestjs-openapi-parser/issues"
+  },
   "type": "commonjs",
   "main": "dist/lib.js",
   "types": "dist/lib.d.ts",
