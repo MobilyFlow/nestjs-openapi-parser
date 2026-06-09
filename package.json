@@ -1,22 +1,38 @@
 {
   "name": "nestjs-openapi-parser",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "CLI that parses a NestJS project with ts-morph and generates an OpenAPI document.",
+  "author": "MobilyFlow",
   "license": "MIT",
+  "homepage": "https://github.com/MobilyFlow/nestjs-openapi-parser#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MobilyFlow/nestjs-openapi-parser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MobilyFlow/nestjs-openapi-parser/issues"
+  },
   "type": "commonjs",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/lib.js",
+  "types": "dist/lib.d.ts",
   "bin": {
-    "nestparser": "dist/index.js"
+    "nestparser": "dist/cli.js"
   },
   "files": [
     "dist",
+    "docs",
     "README.md"
+  ],
+  "workspaces": [
+    "tests/fixtures/*"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "snapshot:serve": "tsx scripts/serve-snapshot.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -28,16 +44,20 @@
   },
   "packageManager": "yarn@4.16.0",
   "dependencies": {
+    "@seriousme/openapi-schema-validator": "^2.9.0",
     "commander": "^12.1.0",
     "ts-morph": "^23.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^20.0.0",
+    "@types/prompts": "^2.4.9",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
+    "prompts": "^2.4.2",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0"
   }
 }
