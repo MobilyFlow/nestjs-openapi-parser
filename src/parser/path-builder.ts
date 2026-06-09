@@ -20,6 +20,10 @@ const HTTP_METHODS: Record<string, string> = {
   Patch: 'patch',
 };
 
+// Media type used for request bodies and responses unless an endpoint overrides
+// it with `@Accept` (request) or `@ContentType` (response) in its JSDoc.
+const DEFAULT_MEDIA_TYPE = 'application/json';
+
 // NestJS's `HttpStatus` enum (from `@nestjs/common`) member name → numeric code.
 // Used to resolve `@HttpCode(HttpStatus.NO_CONTENT)` statically, since we can't
 // import `@nestjs/common` to read the value at runtime.
@@ -226,6 +230,12 @@ export class PathBuilder {
     const summary = this.resolveSummary(controller, method, httpMethod);
     if (summary) operation.summary = summary;
 
+    // `@Accept <type>` overrides the request body media type; `@ContentType
+    // <type>` overrides the response media type. Both default to JSON.
+    const methodTags = getTags(method);
+    const acceptMediaType = methodTags.Accept?.[0] || DEFAULT_MEDIA_TYPE;
+    const responseMediaType = methodTags.ContentType?.[0] || DEFAULT_MEDIA_TYPE;
+
     const rawDesc = method.getJsDocs()[0]?.getCommentText();
     const desc = rawDesc
       ? filterScopedComments(rawDesc, this.activeScopes, {
@@ -274,7 +284,7 @@ export class PathBuilder {
           break;
         }
         case 'Body':
-          requestBody = this.buildRequestBody(param);
+          requestBody = this.buildRequestBody(param, acceptMediaType);
           break;
       }
     }
@@ -293,7 +303,7 @@ export class PathBuilder {
 
     if (parameters.length) operation.parameters = parameters;
     if (requestBody) operation.requestBody = requestBody;
-    operation.responses = this.buildResponses(method, httpMethod);
+    operation.responses = this.buildResponses(method, httpMethod, responseMediaType);
 
     const security = this.buildSecurity(controller, method);
     if (security !== undefined) operation.security = security;
@@ -346,12 +356,19 @@ export class PathBuilder {
     }));
   }
 
-  private buildRequestBody(param: ParameterDeclaration): Record<string, unknown> {
+  private buildRequestBody(
+    param: ParameterDeclaration,
+    mediaType: string,
+  ): Record<string, unknown> {
     const schema = this.schemaBuilder.typeToSchema(param.getType());
-    return { required: true, content: { 'application/json': { schema } } };
+    return { required: true, content: { [mediaType]: { schema } } };
   }
 
-  private buildResponses(method: MethodDeclaration, httpMethod: string): Record<string, unknown> {
+  private buildResponses(
+    method: MethodDeclaration,
+    httpMethod: string,
+    mediaType: string,
+  ): Record<string, unknown> {
     let returnType = method.getReturnType();
     if (AstIndex.symbolName(returnType) === 'Promise') {
       const args = returnType.getTypeArguments();
@@ -363,7 +380,7 @@ export class PathBuilder {
 
     const response: Record<string, unknown> = { description: 'Successful response' };
     if (responseSchema !== undefined) {
-      response.content = { 'application/json': { schema: responseSchema } };
+      response.content = { [mediaType]: { schema: responseSchema } };
     }
     return { [status]: response };
   }

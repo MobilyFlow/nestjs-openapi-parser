@@ -80,6 +80,31 @@ The default is "method return type **is** the response body" with status `201` f
 
 **`@HttpCode(...)` overrides the status.** A handler decorated with `@HttpCode(204)` (numeric literal) or `@HttpCode(HttpStatus.NO_CONTENT)` (the `HttpStatus` member is resolved from a built-in name→code table) uses that code as the response key instead of the 201/200 default — matching NestJS's own behavior.
 
+## Media types — `@Accept` / `@ContentType`
+
+Request bodies and responses default to `application/json`. Override per endpoint with a JSDoc tag on the method (single line, like `@Tag`/`@Name`):
+
+| Tag                         | Overrides                                   |
+| --------------------------- | ------------------------------------------- |
+| `@Accept <media-type>`      | the **request body** media type (`@Body()`) |
+| `@ContentType <media-type>` | the **response** media type                 |
+
+```ts
+@Controller('files')
+export class FilesController {
+  /**
+   * @Accept multipart/form-data
+   * @ContentType application/xml
+   */
+  @Post('upload')
+  upload(@Body() dto: UploadDto): FileInfo {
+    /* ... */
+  }
+}
+```
+
+The `@Body()` schema becomes the `multipart/form-data` content, and the response schema the `application/xml` content. Each tag is independent — set one, the other stays JSON. `@Accept` has no effect on an endpoint without a `@Body()`; `@ContentType` has none when the response has no body.
+
 ## Schemas
 
 The schema builder accepts TypeScript classes and produces OpenAPI object schemas:

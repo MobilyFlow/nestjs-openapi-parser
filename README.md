@@ -183,6 +183,20 @@ export class UsersController {
 Run `npx nestparser --out openapi.json` — that's it. See [What it parses](docs/parser.md) for
 every supported construct (DTOs, `class-validator` constraints, enums, `@Scope`, `@Tag`, hooks…).
 
+## Available JSDoc tags
+
+Add these to a controller, method, or property JSDoc to enrich the output. Each must be on its own line (inline mentions are treated as description text).
+
+| Tag                         | Applies to                      | Effect                                                                                          |
+| --------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `@Tag <name>`               | Controller or method            | Group the operation under `<name>` instead of the tag derived from the class name               |
+| `@Name <text>`              | Method                          | Set the operation `summary` (otherwise the method name, humanized)                              |
+| `@Scope <name>`             | Controller, method, or property | Emit the item only when `<name>` is an active scope. Comma-separated for several (`@Scope a,b`) |
+| `@Accept <media-type>`      | Method                          | Request body (`@Body()`) media type — default `application/json`                                |
+| `@ContentType <media-type>` | Method                          | Response media type — default `application/json`                                                |
+
+Inside any JSDoc body you can also wrap text in `<scope>…</scope>` fragments to show it only under matching scopes — see [Configuration](docs/configuration.md#scoped-description-fragments).
+
 ## What it parses
 
 See [Parser Documentation](docs/parser.md)

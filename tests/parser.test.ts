@@ -1219,3 +1219,81 @@ describe('endpoint summary', () => {
     expect((await summaries({ endpointSummary: () => null }))['/items']).toBe('Find One');
   });
 });
+
+describe('@Accept / @ContentType media types', () => {
+  async function buildDoc(): Promise<OpenApiDocument> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-media-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', experimentalDecorators: true },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Post(path?: string): MethodDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          'declare function Body(): ParameterDecorator;',
+          '',
+          'export class UploadDto { file!: string; }',
+          'export class Item { id!: string; }',
+          '',
+          "@Controller('items')",
+          'export class ItemsController {',
+          '  /**',
+          '   * @Accept multipart/form-data',
+          '   * @ContentType application/xml',
+          '   */',
+          "  @Post('upload')",
+          '  upload(@Body() _dto: UploadDto): Item {',
+          '    return new Item();',
+          '  }',
+          '',
+          "  @Post('create')",
+          '  create(@Body() _dto: UploadDto): Item {',
+          '    return new Item();',
+          '  }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Items', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  type Op = {
+    requestBody?: { content: Record<string, unknown> };
+    responses: Record<string, { content?: Record<string, unknown> }>;
+  };
+  const op = (doc: OpenApiDocument, p: string): Op => doc.paths[p]?.post as Op;
+
+  it('@Accept overrides the request body media type', async () => {
+    const upload = op(await buildDoc(), '/items/upload');
+    expect(Object.keys(upload.requestBody!.content)).toEqual(['multipart/form-data']);
+  });
+
+  it('@ContentType overrides the response media type', async () => {
+    const upload = op(await buildDoc(), '/items/upload');
+    expect(Object.keys(upload.responses['201'].content!)).toEqual(['application/xml']);
+  });
+
+  it('defaults both to application/json when the tags are absent', async () => {
+    const create = op(await buildDoc(), '/items/create');
+    expect(Object.keys(create.requestBody!.content)).toEqual(['application/json']);
+    expect(Object.keys(create.responses['201'].content!)).toEqual(['application/json']);
+  });
+});
