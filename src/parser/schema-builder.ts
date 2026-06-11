@@ -38,12 +38,28 @@ export interface SchemaMembers {
  * those decorators — are read through the resolved `Type`, so `extends`,
  * intersections and mapped members fold in for free.
  */
+/**
+ * Hard cap on the nesting depth of *anonymous* inline object expansion. Named
+ * models break recursion through `$ref` (the `pending`/`done` set), but an
+ * anonymous object literal has no name to reference, so a recursive one — e.g. a
+ * generic/mapped/utility type that resolves to a self-referential structural
+ * type — would otherwise expand forever and overflow the stack. The cycle guard
+ * (`expanding`) catches the common case where the checker reuses one type
+ * instance; this depth cap is the backstop for types re-synthesized at each
+ * level. Beyond it, expansion degrades to a bare `{ type: 'object' }`.
+ */
+const MAX_ANON_DEPTH = 16;
+
 export class SchemaBuilder {
   private readonly schemas: Record<string, OpenApiSchema> = {};
   private readonly pending = new Set<string>();
   private readonly done = new Set<string>();
   private readonly activeScopes: Set<string>;
   private readonly knownScopes: Set<string> | undefined;
+  // Anonymous object types currently on the inline-expansion stack. Membership
+  // means we're already inside this exact type (a cycle); `size` is the current
+  // nesting depth. Entries are added/removed around each expansion in schemaForType.
+  private readonly expanding = new Set<object>();
 
   constructor(
     private readonly index: AstIndex,
@@ -80,7 +96,14 @@ export class SchemaBuilder {
         );
       }
 
-      const schema = this.buildModelSchema(node);
+      let schema = this.buildModelSchema(node);
+      // A component whose entire body is a `$ref` to itself makes deref-based
+      // renderers (Scalar, Redoc) recurse forever — and carries no information.
+      // Degrade it to a plain object. This is a backstop; the builders above
+      // should already avoid producing one.
+      if ('$ref' in schema && schema.$ref === `#/components/schemas/${name}`) {
+        schema = { type: 'object' };
+      }
       const rawDesc = node.getJsDocs()[0]?.getCommentText();
       const desc = rawDesc
         ? filterScopedComments(rawDesc, this.activeScopes, {
@@ -115,7 +138,13 @@ export class SchemaBuilder {
   private buildTypeAliasSchema(decl: TypeAliasDeclaration): OpenApiSchema {
     const type = decl.getType();
     if (type.isUnion()) return this.unionSchema(type);
-    if (type.isObject() && type.getProperties().length > 0) {
+    // Object literals AND intersections (e.g. `Omit<X, ...> & { ... }`) expose
+    // their merged members via `getProperties()` — but an intersection is not
+    // `isObject()`, so it must be matched explicitly. Both expand to a real
+    // object schema; without this an intersection alias falls through to
+    // `schemaForType`, which recognizes it by its own alias name and emits a
+    // degenerate `{ $ref: <self> }` (an infinite loop for deref-based renderers).
+    if ((type.isObject() || type.isIntersection()) && type.getProperties().length > 0) {
       return this.objectSchema(this.membersFromType(type, decl.getName()));
     }
     return this.schemaForType(type);
@@ -239,12 +268,23 @@ export class SchemaBuilder {
 
     // Anonymous inline object literal (e.g. a property typed `{ x: number }`):
     // expand its members rather than degrade to a bare `{ type: 'object' }`.
+    // Guarded against recursive/pathologically-deep anonymous types, which have
+    // no name to break the cycle with a `$ref`.
     if (
       type.isObject() &&
       (!symbolName || symbolName === '__type') &&
       type.getProperties().length > 0
     ) {
-      return this.objectSchema(this.membersFromType(type, '<anon>'));
+      const key = type.compilerType as unknown as object;
+      if (this.expanding.has(key) || this.expanding.size >= MAX_ANON_DEPTH) {
+        return { type: 'object' };
+      }
+      this.expanding.add(key);
+      try {
+        return this.objectSchema(this.membersFromType(type, '<anon>'));
+      } finally {
+        this.expanding.delete(key);
+      }
     }
 
     return { type: 'object' };

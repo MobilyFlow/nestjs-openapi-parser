@@ -296,6 +296,152 @@ describe('parseNestProject (library API)', () => {
   });
 });
 
+describe('recursive types do not overflow the stack', () => {
+  // A recursive *anonymous* object (here `Pick<Category, ...>`, whose alias
+  // `Pick` is a lib type outside the source tree, so it has no name to `$ref`)
+  // used to expand forever — "Maximum call stack size exceeded". The cycle guard
+  // in `schemaForType` must break it, degrading the repeated node to {type:object}.
+  async function buildRecursiveDoc(propType: string): Promise<OpenApiDocument> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-recursive-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: true,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'tree.controller.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          '',
+          'export interface Category {',
+          '  name: string;',
+          `  children: ${propType};`,
+          '}',
+          '',
+          "@Controller('cat')",
+          'export class TreeController {',
+          '  @Get()',
+          '  root(): Category {',
+          "    return { name: 'root', children: [] };",
+          '  }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'Tree', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('terminates on a recursive anonymous object and degrades the cycle', async () => {
+    const doc = await buildRecursiveDoc("Pick<Category, 'name' | 'children'>[]");
+    const category = doc.components?.schemas?.Category as {
+      properties: { children: { items: { properties: { children: { items: unknown } } } } };
+    };
+    // First level expands; the recursive re-entry bottoms out at {type:object}.
+    const grandchildItems = category.properties.children.items.properties.children.items;
+    expect(grandchildItems).toEqual({ type: 'object' });
+  });
+
+  it('still `$ref`s a *named* recursive type instead of inlining it', async () => {
+    // A named self-referential interface is broken by `$ref`, not the depth guard.
+    const doc = await buildRecursiveDoc('Category[]');
+    const category = doc.components?.schemas?.Category as {
+      properties: { children: { items: { $ref?: string } } };
+    };
+    expect(category.properties.children.items.$ref).toBe('#/components/schemas/Category');
+  });
+});
+
+describe('intersection `type` aliases', () => {
+  // `type T = Omit<X, K> & { ... }` is neither a union nor `isObject()`, but its
+  // merged members are reachable via getProperties(). It must expand to a real
+  // object — not fall through to a degenerate `{ $ref: <self> }`, which makes
+  // deref-based renderers (Scalar) recurse forever ("too much recursion").
+  async function buildIntersectionDoc(): Promise<OpenApiDocument> {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-intersection-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'commonjs',
+            experimentalDecorators: true,
+            strict: true,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'entity.controller.ts'),
+        [
+          'declare function Controller(prefix?: string): ClassDecorator;',
+          'declare function Get(path?: string): MethodDecorator;',
+          '',
+          'export class Entity {',
+          '  id!: string;',
+          '  secret!: string;',
+          '  name!: string;',
+          '}',
+          '',
+          "export type PublicEntity = Omit<Entity, 'secret'> & { extra: string };",
+          '',
+          "@Controller('e')",
+          'export class EntityController {',
+          '  @Get()',
+          '  one(): PublicEntity {',
+          "    return { id: '1', name: 'n', extra: 'x' };",
+          '  }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      return parseNestProject({
+        projectRoot: tmp,
+        config: {
+          openapi: { title: 'E', version: '1.0.0' },
+          project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+        },
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it('expands `Omit<X, K> & { ... }` to a merged object, never a self-$ref', async () => {
+    const doc = await buildIntersectionDoc();
+    const schema = doc.components?.schemas?.PublicEntity as {
+      $ref?: string;
+      type?: string;
+      properties?: Record<string, unknown>;
+    };
+    expect(schema.$ref).toBeUndefined();
+    expect(schema.type).toBe('object');
+    // `Omit` members survive minus the omitted key; the `& { ... }` member folds in.
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual(['extra', 'id', 'name']);
+    expect(schema.properties).not.toHaveProperty('secret');
+  });
+});
+
 describe('output ordering', () => {
   // The source tree is walked in name-sorted order (not raw fs.readdirSync
   // order), so paths, tags and schemas come out identical on every platform.
