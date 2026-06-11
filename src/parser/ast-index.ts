@@ -122,7 +122,9 @@ export class AstIndex {
    * type alias, mirroring the resolution order used elsewhere. Used for shared
    * JSDoc/`@Scope` handling across the three kinds.
    */
-  getModel(name: string): ClassDeclaration | InterfaceDeclaration | TypeAliasDeclaration | undefined {
+  getModel(
+    name: string,
+  ): ClassDeclaration | InterfaceDeclaration | TypeAliasDeclaration | undefined {
     return this.getClass(name) ?? this.getInterface(name) ?? this.getTypeAlias(name);
   }
 

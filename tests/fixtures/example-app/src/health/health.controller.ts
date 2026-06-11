@@ -33,6 +33,10 @@ export class HealthController {
   /** Status snapshot returned as a `type` alias. */
   @Get('summary')
   summary(): StatusSummary {
-    return { status: { uptimeSeconds: 0, region: 'us-east', services: [] }, checkedAt: new Date(), meta: { degraded: false } };
+    return {
+      status: { uptimeSeconds: 0, region: 'us-east', services: [] },
+      checkedAt: new Date(),
+      meta: { degraded: false },
+    };
   }
 }
