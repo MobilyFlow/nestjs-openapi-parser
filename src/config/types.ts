@@ -171,15 +171,19 @@ export interface NestParserConfig {
    */
   pages?: PagesConfig;
   /**
-   * Class references to force-include in `components.schemas`, even when no
-   * endpoint reaches them. Pass the class itself (not its name) — we resolve
-   * via `klass.name` against the project's AST index. Throws at build time if
-   * any name cannot be matched, to surface typos and out-of-tree classes early.
+   * Models to force-include in `components.schemas`, even when no endpoint
+   * reaches them. Two forms:
+   *  - a class reference (the class itself, not its name) — resolved via
+   *    `klass.name` against the project's AST index;
+   *  - a string `'src/path/to/file.ts#ModelName'` (path relative to the project
+   *    root, or a bare `'ModelName'`) — the only way to include an `interface`
+   *    or `type` alias, since those have no runtime constructor to pass.
    *
-   * Transitive references of each entry are also pulled in (same reachability
-   * walk as if an endpoint had returned the class).
+   * Throws at build time if any entry cannot be matched, to surface typos and
+   * out-of-tree models early. Transitive references of each entry are also
+   * pulled in (same reachability walk as if an endpoint had returned it).
    */
-  additionalModels?: ModelConstructor[];
+  additionalModels?: (ModelConstructor | string)[];
   /**
    * Active scopes for this build. Items annotated with `@Scope` are emitted
    * only when their scope set intersects this list. Untagged items are always

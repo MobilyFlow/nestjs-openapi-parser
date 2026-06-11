@@ -136,6 +136,84 @@
         "security": []
       }
     },
+    "/api/health/status": {
+      "get": {
+        "operationId": "SystemHealth_status",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Status",
+        "description": "Aggregated status returned as an `interface`.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemStatus"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/health/summary": {
+      "get": {
+        "operationId": "SystemHealth_summary",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Summary",
+        "description": "Status snapshot returned as a `type` alias.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/StatusSummary"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/posts": {
       "get": {
         "operationId": "Posts_list",
@@ -594,6 +672,28 @@
   },
   "components": {
     "schemas": {
+      "MaintenanceWindow": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "reason"
+        ],
+        "description": "Orphan interface — no endpoint reaches it. Force-included via the\n`additionalModels` string form to prove non-class models can be pinned."
+      },
       "AdminMeta": {
         "type": "object",
         "properties": {
@@ -666,6 +766,68 @@
           "ok",
           "uptimeSeconds"
         ]
+      },
+      "SystemStatus": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "enum": [
+              "us-east",
+              "eu-west",
+              "asia"
+            ]
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceHealth"
+            }
+          },
+          "uptimeSeconds": {
+            "type": "number",
+            "description": "Seconds since the process started."
+          }
+        },
+        "required": [
+          "region",
+          "services",
+          "uptimeSeconds"
+        ],
+        "description": "Aggregated system status — returned as an `interface` with `extends` heritage\nand a nested array of `$ref`d models."
+      },
+      "StatusSummary": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/SystemStatus"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional operator note."
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "degraded": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "degraded"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "checkedAt",
+          "meta"
+        ],
+        "description": "A `type` alias over an object literal — references an interface, a `Date`, an\noptional field and an anonymous inline object."
       },
       "CreatePostDto": {
         "type": "object",
@@ -850,6 +1012,27 @@
             "minLength": 8
           }
         }
+      },
+      "ServiceHealth": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Service identifier."
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "latencyMs": {
+            "type": "number",
+            "description": "Round-trip latency in milliseconds, when measured."
+          }
+        },
+        "required": [
+          "name",
+          "healthy"
+        ],
+        "description": "Health of a single downstream service."
       }
     },
     "securitySchemes": {

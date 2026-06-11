@@ -210,6 +210,89 @@ describe('parseNestProject (library API)', () => {
         }),
       ).rejects.toThrow(/NotInProject/);
     });
+
+    it('force-includes an interface via the `path#Name` string form', async () => {
+      // The base fixture config pins `MaintenanceWindow` — an orphan interface.
+      const document = await buildFixtureDocument();
+      expect(document.components?.schemas).toHaveProperty('MaintenanceWindow');
+    });
+
+    it('resolves the bare-name string form too', async () => {
+      const document = await buildFixtureDocument({ additionalModels: ['MaintenanceWindow'] });
+      expect(document.components?.schemas).toHaveProperty('MaintenanceWindow');
+    });
+
+    it('throws when the file in a `path#Name` entry has no such model', async () => {
+      await expect(
+        buildFixtureDocument({ additionalModels: ['src/health/system-status.ts#Nope'] }),
+      ).rejects.toThrow(/Nope/);
+    });
+
+    it('throws when the file in a `path#Name` entry is not in the project', async () => {
+      await expect(
+        buildFixtureDocument({ additionalModels: ['src/does/not/exist.ts#Region'] }),
+      ).rejects.toThrow(/exist\.ts/);
+    });
+  });
+
+  describe('interface & type models', () => {
+    it('emits an interface return type as a `$ref` + component', async () => {
+      const document = await buildFixtureDocument();
+      const status = document.paths['/api/health/status'].get as {
+        responses: Record<
+          string,
+          { content: { 'application/json': { schema: Record<string, unknown> } } }
+        >;
+      };
+      const schema = status.responses['200'].content['application/json'].schema as {
+        properties: Record<string, { $ref?: string }>;
+      };
+      expect(schema.properties.data.$ref).toBe('#/components/schemas/SystemStatus');
+      expect(document.components?.schemas).toHaveProperty('SystemStatus');
+    });
+
+    it('folds `extends` heritage into the interface schema', async () => {
+      const document = await buildFixtureDocument();
+      const status = document.components?.schemas?.SystemStatus as {
+        properties: Record<string, unknown>;
+        required: string[];
+      };
+      // `uptimeSeconds` comes from the base interface `BaseStatus`.
+      expect(status.properties).toHaveProperty('uptimeSeconds');
+      expect(status.required).toContain('uptimeSeconds');
+    });
+
+    it('emits a string-literal-union `type` alias inline as an enum', async () => {
+      const document = await buildFixtureDocument();
+      const status = document.components?.schemas?.SystemStatus as {
+        properties: Record<string, { type?: string; enum?: string[] }>;
+      };
+      expect(status.properties.region).toEqual({
+        type: 'string',
+        enum: ['us-east', 'eu-west', 'asia'],
+      });
+    });
+
+    it('emits an object `type` alias as a component, refing nested models', async () => {
+      const document = await buildFixtureDocument();
+      const summary = document.components?.schemas?.StatusSummary as {
+        properties: Record<string, { $ref?: string; type?: string }>;
+        required: string[];
+      };
+      expect(summary.properties.status.$ref).toBe('#/components/schemas/SystemStatus');
+      // optional `note?` is absent from `required`.
+      expect(summary.required).not.toContain('note');
+    });
+
+    it('expands an anonymous inline object instead of degrading to {type:object}', async () => {
+      const document = await buildFixtureDocument();
+      const meta = (
+        document.components?.schemas?.StatusSummary as {
+          properties: Record<string, { properties?: Record<string, unknown> }>;
+        }
+      ).properties.meta;
+      expect(meta.properties).toHaveProperty('degraded');
+    });
   });
 });
 
@@ -223,6 +306,8 @@ describe('output ordering', () => {
     expect(Object.keys(document.paths)).toEqual([
       '/api/auth/login',
       '/api/health',
+      '/api/health/status',
+      '/api/health/summary',
       '/api/posts',
       '/api/users',
       '/api/users/{id}',
@@ -236,14 +321,20 @@ describe('output ordering', () => {
       'Users',
     ]);
     expect(Object.keys(document.components?.schemas ?? {})).toEqual([
+      // `additionalModels` entries are registered before the path walk.
+      'MaintenanceWindow',
       'LoginDto',
       'LoginResponseDto',
       'HealthStatusDto',
+      'SystemStatus',
+      'StatusSummary',
       'CreatePostDto',
       'BlogPost',
       'User',
       'CreateUserDto',
       'UpdateUserDto',
+      // Registered transitively while `SystemStatus` is built, so it lands last.
+      'ServiceHealth',
     ]);
   });
 

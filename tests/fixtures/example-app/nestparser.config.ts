@@ -17,6 +17,10 @@ export default defineConfig({
     globalPrefix: 'api',
   },
 
+  // Force-include an orphan `interface` (no endpoint reaches it) via the string
+  // form — the only way to pin a non-class model, which has no constructor.
+  additionalModels: ['src/health/system-status.ts#MaintenanceWindow'],
+
   // Standalone Markdown page rendered ahead of the API reference. `group`/
   // `apiGroup` opt into grouped `x-tagGroups` navigation (omit both for a flat,
   // pages-first tag list).

@@ -1,4 +1,13 @@
-import { ClassDeclaration, Node, PropertyDeclaration, SyntaxKind, Type } from 'ts-morph';
+import {
+  ClassDeclaration,
+  InterfaceDeclaration,
+  Node,
+  PropertyDeclaration,
+  SymbolFlags,
+  SyntaxKind,
+  Type,
+  TypeAliasDeclaration,
+} from 'ts-morph';
 import type { OpenApiSchema } from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
@@ -15,12 +24,19 @@ export interface SchemaMembers {
 }
 
 /**
- * Converts TypeScript classes (entities & DTOs) into OpenAPI `components.schemas`.
- * Handles:
+ * Converts TypeScript classes, interfaces and type aliases (entities & DTOs)
+ * into OpenAPI `components.schemas`. Handles:
  *  - required derived from `@IsOptional()` / `?` (configurable)
  *  - `@Exclude()` properties omitted (configurable)
  *  - union object types -> `oneOf`, string-literal unions -> enum
  *  - `PartialType / PickType / OmitType / IntersectionType` heritage
+ *  - `interface` members + `extends` heritage, `type` aliases (object literal,
+ *    union, intersection)
+ *
+ * Classes keep a decorator-aware declaration walk (validator constraints,
+ * `@Exclude`, `@IsOptional`); interfaces and type aliases — which can't carry
+ * those decorators — are read through the resolved `Type`, so `extends`,
+ * intersections and mapped members fold in for free.
  */
 export class SchemaBuilder {
   private readonly schemas: Record<string, OpenApiSchema> = {};
@@ -37,9 +53,9 @@ export class SchemaBuilder {
     this.knownScopes = options.knownScopes;
   }
 
-  /** Register a reference to a class schema and return the `$ref` fragment. */
+  /** Register a reference to a model schema and return the `$ref` fragment. */
   registerRef(name: string): OpenApiSchema {
-    if (!this.index.hasClass(name)) return { type: 'object' };
+    if (!this.index.hasModel(name)) return { type: 'object' };
     if (!this.done.has(name)) this.pending.add(name);
     return { $ref: `#/components/schemas/${name}` };
   }
@@ -52,31 +68,63 @@ export class SchemaBuilder {
       if (this.done.has(name)) continue;
       this.done.add(name);
 
-      const clazz = this.index.getClass(name);
-      if (!clazz) continue;
+      const node = this.index.getModel(name);
+      if (!node) continue;
 
-      const classScopes = getScopes(getTags(clazz));
-      if (!isVisible(classScopes, this.activeScopes)) {
+      const modelScopes = getScopes(getTags(node));
+      if (!isVisible(modelScopes, this.activeScopes)) {
         throw new Error(
-          `Scope conflict: class "${name}" is reached by the spec but has @Scope ${formatScopes(classScopes)} ` +
+          `Scope conflict: model "${name}" is reached by the spec but has @Scope ${formatScopes(modelScopes)} ` +
             `which doesn't match the active scopes ${formatScopes(this.activeScopes)}. ` +
             `Add a matching scope to --scope/config.scopes, or hide whatever referenced it.`,
         );
       }
 
-      const members = this.buildMembers(clazz);
-      const schema: OpenApiSchema = { type: 'object', properties: members.properties };
-      if (members.required.length) schema.required = members.required;
-      const rawDesc = clazz.getJsDocs()[0]?.getCommentText();
+      const schema = this.buildModelSchema(node);
+      const rawDesc = node.getJsDocs()[0]?.getCommentText();
       const desc = rawDesc
         ? filterScopedComments(rawDesc, this.activeScopes, {
             itemPath: name,
             knownScopes: this.knownScopes,
           })
         : undefined;
-      if (desc) schema.description = desc;
-      this.schemas[name] = schema;
+      this.schemas[name] = desc ? withDescription(schema, desc) : schema;
     }
+  }
+
+  /** Build the component schema for a named model, dispatching on its kind. */
+  private buildModelSchema(
+    node: ClassDeclaration | InterfaceDeclaration | TypeAliasDeclaration,
+  ): OpenApiSchema {
+    if (Node.isClassDeclaration(node)) {
+      return this.objectSchema(this.buildMembers(node));
+    }
+    if (Node.isInterfaceDeclaration(node)) {
+      // The interface's resolved type already folds in `extends` heritage.
+      return this.objectSchema(this.membersFromType(node.getType(), node.getName()));
+    }
+    return this.buildTypeAliasSchema(node);
+  }
+
+  /**
+   * Build the schema for a `type` alias from its resolved type:
+   *  - union          -> `enum` (string literals) / `oneOf` (objects)
+   *  - object         -> `{ type: 'object', properties }` (intersections fold in)
+   *  - anything else  -> delegate to `schemaForType` (primitive, array, ref, ...)
+   */
+  private buildTypeAliasSchema(decl: TypeAliasDeclaration): OpenApiSchema {
+    const type = decl.getType();
+    if (type.isUnion()) return this.unionSchema(type);
+    if (type.isObject() && type.getProperties().length > 0) {
+      return this.objectSchema(this.membersFromType(type, decl.getName()));
+    }
+    return this.schemaForType(type);
+  }
+
+  private objectSchema(members: SchemaMembers): OpenApiSchema {
+    const schema: OpenApiSchema = { type: 'object', properties: members.properties };
+    if (members.required.length) schema.required = members.required;
+    return schema;
   }
 
   getSchemas(): Record<string, OpenApiSchema> {
@@ -174,26 +222,86 @@ export class SchemaBuilder {
     }
 
     if (type.isUnion()) {
-      const members = type.getUnionTypes().filter((t) => !t.isUndefined() && !t.isNull());
-      if (members.length === 1) return this.schemaForType(members[0]);
-      if (members.length && members.every((t) => t.isStringLiteral())) {
-        return { type: 'string', enum: members.map((t) => t.getLiteralValue() as string) };
-      }
-      const objectMembers = members.filter((t) => {
-        const n = AstIndex.symbolName(t);
-        return n && this.index.hasClass(n);
-      });
-      if (members.length > 0 && objectMembers.length === members.length) {
-        return { oneOf: members.map((t) => this.registerRef(AstIndex.symbolName(t)!)) };
-      }
-      return { type: 'object' };
+      return this.unionSchema(type);
     }
 
-    if (symbolName && this.index.hasClass(symbolName)) {
+    if (symbolName && this.index.hasModel(symbolName)) {
       return this.registerRef(symbolName);
     }
 
+    // A `type` alias over an object literal has `__type` as its own symbol but
+    // the alias name is the component we want to reference (string-literal-union
+    // aliases were already handled as inline enums by the union branch above).
+    const aliasName = type.getAliasSymbol()?.getName();
+    if (aliasName && this.index.hasTypeAlias(aliasName)) {
+      return this.registerRef(aliasName);
+    }
+
+    // Anonymous inline object literal (e.g. a property typed `{ x: number }`):
+    // expand its members rather than degrade to a bare `{ type: 'object' }`.
+    if (
+      type.isObject() &&
+      (!symbolName || symbolName === '__type') &&
+      type.getProperties().length > 0
+    ) {
+      return this.objectSchema(this.membersFromType(type, '<anon>'));
+    }
+
     return { type: 'object' };
+  }
+
+  /**
+   * A union type as an OpenAPI fragment: a single non-null member unwraps, an
+   * all-string-literal union becomes an `enum`, an all-model union becomes a
+   * `oneOf` of `$ref`s, anything else falls back to `{ type: 'object' }`.
+   */
+  private unionSchema(type: Type): OpenApiSchema {
+    const members = type.getUnionTypes().filter((t) => !t.isUndefined() && !t.isNull());
+    if (members.length === 1) return this.schemaForType(members[0]);
+    if (members.length && members.every((t) => t.isStringLiteral())) {
+      return { type: 'string', enum: members.map((t) => t.getLiteralValue() as string) };
+    }
+    const objectMembers = members.filter((t) => {
+      const n = AstIndex.symbolName(t);
+      return n && this.index.hasModel(n);
+    });
+    if (members.length > 0 && objectMembers.length === members.length) {
+      return { oneOf: members.map((t) => this.registerRef(AstIndex.symbolName(t)!)) };
+    }
+    return { type: 'object' };
+  }
+
+  /**
+   * Flatten an object `Type`'s data properties into schema members. Used for
+   * interfaces, `type` aliases and anonymous inline object literals — none of
+   * which carry decorators, so optionality is the `?` flag and descriptions come
+   * straight from JSDoc. Methods and other non-property members are skipped.
+   */
+  private membersFromType(type: Type, ownerName: string): SchemaMembers {
+    const properties: Record<string, OpenApiSchema> = {};
+    const required: string[] = [];
+
+    for (const sym of type.getProperties()) {
+      const decl = sym.getDeclarations()[0];
+      if (!decl) continue;
+      if (!Node.isPropertySignature(decl) && !Node.isPropertyDeclaration(decl)) continue;
+      if (!isVisible(getScopes(getTags(decl)), this.activeScopes)) continue;
+
+      const name = sym.getName();
+      const schema = this.schemaForType(sym.getTypeAtLocation(decl));
+      const rawDesc = decl.getJsDocs()[0]?.getCommentText();
+      const desc = rawDesc
+        ? filterScopedComments(rawDesc, this.activeScopes, {
+            itemPath: `${ownerName}.${name}`,
+            knownScopes: this.knownScopes,
+          })
+        : undefined;
+
+      properties[name] = desc ? withDescription(schema, desc) : schema;
+      if (!sym.hasFlags(SymbolFlags.Optional)) required.push(name);
+    }
+
+    return { properties, required };
   }
 
   /**

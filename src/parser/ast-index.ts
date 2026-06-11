@@ -4,9 +4,11 @@ import {
   ClassDeclaration,
   ClassInstancePropertyTypes,
   EnumDeclaration,
+  InterfaceDeclaration,
   Node,
   Project,
   Type,
+  TypeAliasDeclaration,
 } from 'ts-morph';
 import { DEFAULT_CONVENTIONS, DEFAULT_PROJECT } from '../config/defaults';
 import type { ConventionsConfig, ProjectConfig } from '../config/types';
@@ -20,12 +22,14 @@ export interface AstIndexOptions {
 
 /**
  * Builds and indexes the TypeScript AST of the user's source tree with ts-morph
- * so the OpenAPI generator can resolve classes (entities/DTOs), enums and
- * controllers purely from source code.
+ * so the OpenAPI generator can resolve classes (entities/DTOs), interfaces, type
+ * aliases, enums and controllers purely from source code.
  */
 export class AstIndex {
   readonly project: Project;
   private readonly classesMap = new Map<string, ClassDeclaration>();
+  private readonly interfacesMap = new Map<string, InterfaceDeclaration>();
+  private readonly typeAliasesMap = new Map<string, TypeAliasDeclaration>();
   private readonly enumsMap = new Map<string, EnumDeclaration>();
   private readonly conventions: Required<ConventionsConfig>;
 
@@ -71,6 +75,12 @@ export class AstIndex {
         const name = clazz.getName();
         if (name) this.classesMap.set(name, clazz);
       }
+      for (const iface of sourceFile.getInterfaces()) {
+        this.interfacesMap.set(iface.getName(), iface);
+      }
+      for (const alias of sourceFile.getTypeAliases()) {
+        this.typeAliasesMap.set(alias.getName(), alias);
+      }
       for (const e of sourceFile.getEnums()) {
         this.enumsMap.set(e.getName(), e);
       }
@@ -83,6 +93,37 @@ export class AstIndex {
 
   hasClass(name: string): boolean {
     return this.classesMap.has(name);
+  }
+
+  getInterface(name: string): InterfaceDeclaration | undefined {
+    return this.interfacesMap.get(name);
+  }
+
+  hasInterface(name: string): boolean {
+    return this.interfacesMap.has(name);
+  }
+
+  getTypeAlias(name: string): TypeAliasDeclaration | undefined {
+    return this.typeAliasesMap.get(name);
+  }
+
+  hasTypeAlias(name: string): boolean {
+    return this.typeAliasesMap.has(name);
+  }
+
+  /** True when the name resolves to any schema model — class, interface or type alias. */
+  hasModel(name: string): boolean {
+    return this.hasClass(name) || this.hasInterface(name) || this.hasTypeAlias(name);
+  }
+
+  /**
+   * The declaration node backing a named model (class, interface or type alias),
+   * or undefined if unknown. A class wins over an interface, an interface over a
+   * type alias, mirroring the resolution order used elsewhere. Used for shared
+   * JSDoc/`@Scope` handling across the three kinds.
+   */
+  getModel(name: string): ClassDeclaration | InterfaceDeclaration | TypeAliasDeclaration | undefined {
+    return this.getClass(name) ?? this.getInterface(name) ?? this.getTypeAlias(name);
   }
 
   hasEnum(name: string): boolean {
@@ -110,6 +151,15 @@ export class AstIndex {
       for (const prop of clazz.getInstanceProperties()) {
         for (const s of getScopes(getTags(prop))) scopes.add(s);
       }
+    }
+    for (const iface of this.interfacesMap.values()) {
+      for (const s of getScopes(getTags(iface))) scopes.add(s);
+      for (const prop of iface.getProperties()) {
+        for (const s of getScopes(getTags(prop))) scopes.add(s);
+      }
+    }
+    for (const alias of this.typeAliasesMap.values()) {
+      for (const s of getScopes(getTags(alias))) scopes.add(s);
     }
     return scopes;
   }

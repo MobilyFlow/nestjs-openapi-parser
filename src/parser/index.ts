@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { NestParserConfig, PagesConfig } from '../config/types';
+import type { ModelConstructor, NestParserConfig, PagesConfig } from '../config/types';
 import type { OpenApiDocument, OpenApiSecurityScheme, OpenApiTagGroup } from '../types/openapi';
 import { validateDocument } from '../validate';
 import { AstIndex } from './ast-index';
@@ -40,19 +40,19 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
   const knownScopes = new Set<string>([...index.getDeclaredScopes(), ...activeScopes]);
   const schemaBuilder = new SchemaBuilder(index, { activeScopes, knownScopes });
 
-  for (const klass of config.additionalModels ?? []) {
-    const name = klass.name;
-    const astClass = index.getClass(name);
-    if (!astClass) {
+  for (const entry of config.additionalModels ?? []) {
+    const name = resolveAdditionalModel(entry, index, projectRoot);
+    const node = index.getModel(name);
+    if (!node) {
       throw new Error(
-        `additionalModels: class "${name}" was not found in the project source tree. ` +
+        `additionalModels: model "${name}" was not found in the project source tree. ` +
           `Make sure it is defined in a .ts file under the configured rootDir.`,
       );
     }
-    const classScopes = getScopes(getTags(astClass));
-    if (!isVisible(classScopes, activeScopes)) {
+    const modelScopes = getScopes(getTags(node));
+    if (!isVisible(modelScopes, activeScopes)) {
       throw new Error(
-        `additionalModels: class "${name}" has @Scope ${formatScopes(classScopes)} ` +
+        `additionalModels: model "${name}" has @Scope ${formatScopes(modelScopes)} ` +
           `which doesn't match the active scopes ${formatScopes(activeScopes)}. ` +
           `Remove it from additionalModels or add a matching scope.`,
       );
@@ -117,6 +117,50 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
 
 function formatScopes(scopes: Set<string>): string {
   return scopes.size === 0 ? '{}' : `{${[...scopes].join(', ')}}`;
+}
+
+/**
+ * Resolve an `additionalModels` entry to a model name. A class constructor
+ * resolves by `klass.name`. A string is either a bare `'ModelName'` or
+ * `'src/path/to/file.ts#ModelName'`; when a file path is given it must be a
+ * source file in the project that declares `ModelName` (class, interface, type
+ * alias or enum) — otherwise we throw, to catch typos and stale paths early.
+ */
+function resolveAdditionalModel(
+  entry: ModelConstructor | string,
+  index: AstIndex,
+  projectRoot: string,
+): string {
+  if (typeof entry !== 'string') return entry.name;
+
+  const hashIndex = entry.lastIndexOf('#');
+  if (hashIndex === -1) return entry.trim();
+
+  const filePart = entry.slice(0, hashIndex).trim();
+  const name = entry.slice(hashIndex + 1).trim();
+  if (!name) {
+    throw new Error(`additionalModels: entry "${entry}" is missing a model name after "#".`);
+  }
+  if (!filePart) return name;
+
+  const abs = path.isAbsolute(filePart) ? filePart : path.resolve(projectRoot, filePart);
+  const sourceFile = index.project.getSourceFile(abs);
+  if (!sourceFile) {
+    throw new Error(
+      `additionalModels: file "${filePart}" (from "${entry}") is not part of the project source tree.`,
+    );
+  }
+  const declared =
+    sourceFile.getClass(name) ??
+    sourceFile.getInterface(name) ??
+    sourceFile.getTypeAlias(name) ??
+    sourceFile.getEnum(name);
+  if (!declared) {
+    throw new Error(
+      `additionalModels: "${name}" is not declared in "${filePart}" (from "${entry}").`,
+    );
+  }
+  return name;
 }
 
 /** Security schemes with `null`/`undefined` entries removed. */
