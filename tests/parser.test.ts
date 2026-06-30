@@ -1209,7 +1209,15 @@ describe('component name sanitization', () => {
       );
       fs.writeFileSync(
         path.join(tmp, 'src', 'models.ts'),
-        ['export class Event$Payload {', '  x!: string;', '}', 'export class Holder {', '  payload!: Event$Payload;', '}', ''].join('\n'),
+        [
+          'export class Event$Payload {',
+          '  x!: string;',
+          '}',
+          'export class Holder {',
+          '  payload!: Event$Payload;',
+          '}',
+          '',
+        ].join('\n'),
       );
       const index = new AstIndex({
         projectRoot: tmp,
