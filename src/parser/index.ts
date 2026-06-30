@@ -16,7 +16,7 @@ export interface ParseNestProjectOptions {
 }
 
 /**
- * Build an OpenAPI 3.0.3 document from a NestJS project's TypeScript source.
+ * Build an OpenAPI 3.1.0 document from a NestJS project's TypeScript source.
  * Pure static analysis — no app boot, no decorator reflection.
  *
  * The produced document is validated against the OpenAPI 3.x schema before it is
@@ -79,7 +79,7 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
   schemaBuilder.build();
 
   const document: OpenApiDocument = {
-    openapi: '3.0.3',
+    openapi: '3.1.0',
     info: {
       title: config.openapi.title,
       version: config.openapi.version,

@@ -1130,9 +1130,10 @@ describe('optional & unsupported route patterns', () => {
 });
 
 describe('property descriptions on $ref schemas', () => {
-  // A `$ref` is a Reference Object whose siblings are ignored in OpenAPI 3.0, so a
-  // described class-typed property must be wrapped in `allOf` for the description
-  // to survive. Undescribed refs stay bare; primitives take the description inline.
+  // Under OpenAPI 3.1 a `$ref` may carry sibling keywords, so a described
+  // class-typed property emits `{ $ref, description }` directly — the field
+  // description overrides at this site without merging the model's own.
+  // Undescribed refs stay bare; primitives take the description inline.
   function holderProps(): Record<string, Record<string, unknown>> {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-refdesc-')));
     try {
@@ -1175,9 +1176,9 @@ describe('property descriptions on $ref schemas', () => {
     }
   }
 
-  it('wraps a described class-typed property in allOf so the description survives', () => {
+  it('emits a described class-typed property as a $ref with a sibling description', () => {
     expect(holderProps().described).toEqual({
-      allOf: [{ $ref: '#/components/schemas/Inner' }],
+      $ref: '#/components/schemas/Inner',
       description: 'Described overlay.',
     });
   });
@@ -1188,6 +1189,44 @@ describe('property descriptions on $ref schemas', () => {
 
   it('keeps a described primitive property inline (description as a normal sibling)', () => {
     expect(holderProps().email).toEqual({ type: 'string', description: 'An email.' });
+  });
+});
+
+describe('component name sanitization', () => {
+  // OpenAPI component keys must match `^[a-zA-Z0-9._-]+$`, but TS identifiers
+  // allow `$` (common in derived-type naming). The engine maps the name to a
+  // valid key for both the component and every `$ref` pointing at it.
+  it('sanitizes `$` in a model name to a valid component key and matching $ref', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nestparser-sanitize-')));
+    try {
+      fs.mkdirSync(path.join(tmp, 'src'));
+      fs.writeFileSync(
+        path.join(tmp, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { target: 'ES2022', module: 'commonjs', strict: false },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'src', 'models.ts'),
+        ['export class Event$Payload {', '  x!: string;', '}', 'export class Holder {', '  payload!: Event$Payload;', '}', ''].join('\n'),
+      );
+      const index = new AstIndex({
+        projectRoot: tmp,
+        project: { tsConfigFilePath: 'tsconfig.json', rootDir: 'src' },
+      });
+      const builder = new SchemaBuilder(index);
+      const holder = index.getClass('Holder');
+      const props = builder.buildMembers(holder!).properties as Record<string, unknown>;
+      // The reference uses the sanitized key, not the raw TS name.
+      expect(props.payload).toEqual({ $ref: '#/components/schemas/Event_Payload' });
+      builder.build();
+      const schemas = builder.getSchemas();
+      expect('Event_Payload' in schemas).toBe(true);
+      expect('Event$Payload' in schemas).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1279,8 +1318,8 @@ describe('class-validator constraint mapping', () => {
 
   it('maps @IsPositive/@IsNegative to exclusive bounds and handles negative literals', () => {
     const p = props();
-    expect(p.pos).toEqual({ type: 'number', minimum: 0, exclusiveMinimum: true });
-    expect(p.neg).toEqual({ type: 'number', maximum: 0, exclusiveMaximum: true });
+    expect(p.pos).toEqual({ type: 'number', exclusiveMinimum: 0 });
+    expect(p.neg).toEqual({ type: 'number', exclusiveMaximum: 0 });
     expect(p.floor).toEqual({ type: 'number', minimum: -5 });
   });
 });

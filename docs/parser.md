@@ -145,9 +145,9 @@ The schema builder accepts TypeScript classes and produces OpenAPI object schema
 | `extends IntersectionType(A, B, ...)`        | merged                                                                               |
 | Class JSDoc                                  | `schema.description`                                                                 |
 | Property JSDoc                               | property-level `description`                                                         |
-| Property JSDoc on a **class-typed** property | `{ allOf: [{ $ref }], description }` (see below)                                     |
+| Property JSDoc on a **class-typed** property | `{ $ref, description }` (see below)                                                  |
 
-A `$ref` is an OpenAPI 3.0 Reference Object whose sibling keys are ignored, so a class-typed property that also carries a JSDoc description is emitted as `{ allOf: [{ $ref }], description }` rather than `{ $ref, description }` — otherwise the description would be silently dropped by tooling. Class-typed properties without a description stay a bare `{ $ref }`.
+Under OpenAPI 3.1 (JSON Schema 2020-12) a `$ref` may carry sibling keywords, and a sibling `description` overrides at the referencing site rather than merging with the target's own description. So a class-typed property that carries a JSDoc description is emitted as `{ $ref, description }` — the field description wins on that property, while the referenced model keeps its own description for the standalone schema view. Class-typed properties without a description stay a bare `{ $ref }`.
 
 ### `class-validator` constraints
 

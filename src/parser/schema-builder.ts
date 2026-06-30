@@ -50,10 +50,25 @@ export interface SchemaMembers {
  */
 const MAX_ANON_DEPTH = 16;
 
+/**
+ * Map a TypeScript model name to a valid OpenAPI component key. Component keys
+ * must match `^[a-zA-Z0-9._-]+$`, but TS identifiers allow more — notably `$`,
+ * common in derived-type naming (`AppEvent$WebhookPayload`). Invalid characters
+ * are replaced with `_`. Only the emitted component key and `$ref` are
+ * sanitized; AST lookups still use the original TS name.
+ */
+function toComponentName(name: string): string {
+  return name.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
 export class SchemaBuilder {
   private readonly schemas: Record<string, OpenApiSchema> = {};
   private readonly pending = new Set<string>();
   private readonly done = new Set<string>();
+  // Sanitized component key -> the original TS model name that claimed it, so
+  // two distinct models sanitizing to the same OpenAPI key fail loudly instead
+  // of silently overwriting each other.
+  private readonly componentNames = new Map<string, string>();
   private readonly activeScopes: Set<string>;
   private readonly knownScopes: Set<string> | undefined;
   // Anonymous object types currently on the inline-expansion stack. Membership
@@ -73,7 +88,7 @@ export class SchemaBuilder {
   registerRef(name: string): OpenApiSchema {
     if (!this.index.hasModel(name)) return { type: 'object' };
     if (!this.done.has(name)) this.pending.add(name);
-    return { $ref: `#/components/schemas/${name}` };
+    return { $ref: `#/components/schemas/${toComponentName(name)}` };
   }
 
   /** Process the queue until no schema remains to build. */
@@ -96,12 +111,22 @@ export class SchemaBuilder {
         );
       }
 
+      const componentName = toComponentName(name);
+      const claimed = this.componentNames.get(componentName);
+      if (claimed && claimed !== name) {
+        throw new Error(
+          `Component name collision: models "${claimed}" and "${name}" both map to the OpenAPI ` +
+            `schema key "${componentName}". Rename one so they sanitize to distinct keys.`,
+        );
+      }
+      this.componentNames.set(componentName, name);
+
       let schema = this.buildModelSchema(node);
       // A component whose entire body is a `$ref` to itself makes deref-based
       // renderers (Scalar, Redoc) recurse forever — and carries no information.
       // Degrade it to a plain object. This is a backstop; the builders above
       // should already avoid producing one.
-      if ('$ref' in schema && schema.$ref === `#/components/schemas/${name}`) {
+      if ('$ref' in schema && schema.$ref === `#/components/schemas/${componentName}`) {
         schema = { type: 'object' };
       }
       const rawDesc = node.getJsDocs()[0]?.getCommentText();
@@ -111,7 +136,7 @@ export class SchemaBuilder {
             knownScopes: this.knownScopes,
           })
         : undefined;
-      this.schemas[name] = desc ? withDescription(schema, desc) : schema;
+      this.schemas[componentName] = desc ? withDescription(schema, desc) : schema;
     }
   }
 
@@ -378,7 +403,7 @@ export class SchemaBuilder {
    *  - `@IsEmail/@IsUrl/@IsUUID/@IsDateString` -> `format`
    *  - `@Matches(/re/)`            -> `pattern`
    *  - `@IsInt`                    -> narrows `number` to `integer`
-   *  - `@IsPositive/@IsNegative`   -> exclusive `minimum` / `maximum` of 0
+   *  - `@IsPositive/@IsNegative`   -> numeric `exclusiveMinimum`/`exclusiveMaximum` of 0
    */
   private applyValidatorConstraints(schema: OpenApiSchema, prop: PropertyDeclaration): void {
     if ('$ref' in schema) return;
@@ -428,12 +453,10 @@ export class SchemaBuilder {
           if (schema.type === 'number') schema.type = 'integer';
           break;
         case 'IsPositive':
-          schema.minimum = 0;
-          schema.exclusiveMinimum = true;
+          schema.exclusiveMinimum = 0;
           break;
         case 'IsNegative':
-          schema.maximum = 0;
-          schema.exclusiveMaximum = true;
+          schema.exclusiveMaximum = 0;
           break;
         case 'Matches': {
           const pattern = regexLiteralPattern(args[0]);
@@ -507,14 +530,18 @@ function regexLiteralPattern(arg: Node | undefined): string | undefined {
 }
 
 /**
- * Attach a `description` to a property schema. A `$ref` is a Reference Object
- * whose sibling keys are ignored in OpenAPI 3.0, so a bare `$ref` is wrapped in
- * `allOf` (a normal Schema Object) so the description is actually honored. Any
- * other schema takes the description directly as a sibling.
+ * Attach a `description` to a property schema. Under OpenAPI 3.1 (JSON Schema
+ * 2020-12) a `$ref` may carry sibling keywords, and a sibling `description`
+ * applies to the referencing site as an *override* — it does not merge with the
+ * target's own description. So we emit `{ $ref, description }` directly: the
+ * field description wins at this property, while the referenced model keeps its
+ * own description for the standalone "Models" view. (Under 3.0 this required an
+ * `allOf` wrapper, which merged the two descriptions and made renderers show
+ * both.) Any other schema takes the description directly as a sibling.
  */
 function withDescription(schema: OpenApiSchema, description: string): OpenApiSchema {
   if ('$ref' in schema) {
-    return { allOf: [schema], description };
+    return { ...schema, description };
   }
   schema.description = description;
   return schema;
