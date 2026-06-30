@@ -7,7 +7,11 @@ import {
   Type,
 } from 'ts-morph';
 import type { NestParserHooks } from '../config/types';
-import type { OpenApiSchema, OpenApiSecurityRequirement } from '../types/openapi';
+import type {
+  OpenApiResponse,
+  OpenApiSchema,
+  OpenApiSecurityRequirement,
+} from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { SchemaBuilder } from './schema-builder';
 import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
@@ -319,7 +323,7 @@ export class PathBuilder {
 
     if (parameters.length) operation.parameters = parameters;
     if (requestBody) operation.requestBody = requestBody;
-    operation.responses = this.buildResponses(method, httpMethod, responseMediaType);
+    operation.responses = this.buildResponses(controller, method, httpMethod, responseMediaType);
 
     const security = this.buildSecurity(controller, method);
     if (security !== undefined) operation.security = security;
@@ -455,10 +459,11 @@ export class PathBuilder {
   }
 
   private buildResponses(
+    controller: ClassDeclaration,
     method: MethodDeclaration,
     httpMethod: string,
     mediaType: string,
-  ): Record<string, unknown> {
+  ): Record<string, OpenApiResponse> {
     let returnType = method.getReturnType();
     if (AstIndex.symbolName(returnType) === 'Promise') {
       const args = returnType.getTypeArguments();
@@ -468,11 +473,61 @@ export class PathBuilder {
     const responseSchema = this.computeResponseSchema(method, returnType);
     const status = this.responseStatus(method, httpMethod);
 
-    const response: Record<string, unknown> = { description: 'Successful response' };
+    const success: OpenApiResponse = { description: 'Successful response' };
     if (responseSchema !== undefined) {
-      response.content = { [mediaType]: { schema: responseSchema } };
+      success.content = { [mediaType]: { schema: responseSchema } };
     }
-    return { [status]: response };
+
+    // Seed the success entry first, then layer `@Response <code> <description>`
+    // tags on top. `??=` keeps the computed success entry authoritative and lets
+    // the first tag win on a duplicate code; the body (`content`) is filled by
+    // the `buildResponses` hook, not the tag.
+    const responses: Record<string, OpenApiResponse> = { [status]: success };
+    for (const line of getTags(method).Response ?? []) {
+      const parsed = this.parseResponseTag(line);
+      if (parsed) responses[parsed.code] ??= { description: parsed.description };
+    }
+
+    if (!this.hooks.buildResponses) return responses;
+    const ctx = {
+      controller,
+      method,
+      httpMethod,
+      successStatus: status,
+      typeToSchema: (t: Type) => this.schemaBuilder.typeToSchema(t),
+    };
+    return this.hooks.buildResponses(ctx, responses) ?? responses;
+  }
+
+  /**
+   * Parse a `@Response <code> <description>` tag line. The first token is the
+   * status code; the rest is the description. When the description is omitted,
+   * fall back to the code's canonical HTTP reason phrase. Returns `undefined`
+   * when the code isn't a number, so a malformed tag is skipped rather than
+   * emitting an invalid status key.
+   */
+  private parseResponseTag(line: string): { code: string; description: string } | undefined {
+    const trimmed = line.trim();
+    const match = trimmed.match(/^(\d{3})\s*(.*)$/);
+    if (!match) return undefined;
+    const code = match[1];
+    const description = match[2].trim() || this.reasonPhrase(code);
+    return { code, description };
+  }
+
+  /**
+   * Canonical HTTP reason phrase for a status code, derived from the
+   * `HTTP_STATUS_CODES` member name (e.g. `404` → `Not Found`); else `Error`.
+   */
+  private reasonPhrase(code: string): string {
+    const numeric = Number(code);
+    const member = Object.keys(HTTP_STATUS_CODES).find((k) => HTTP_STATUS_CODES[k] === numeric);
+    if (!member) return 'Error';
+    return member
+      .toLowerCase()
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
   }
 
   /**
@@ -499,11 +554,11 @@ export class PathBuilder {
   ): OpenApiSchema | undefined {
     const isEmpty = returnType.isVoid() || returnType.isUndefined();
 
-    if (!this.hooks.buildResponseSchema) {
+    if (!this.hooks.buildSuccessResponseSchema) {
       return isEmpty ? undefined : this.schemaBuilder.typeToSchema(returnType);
     }
 
-    return this.hooks.buildResponseSchema({
+    return this.hooks.buildSuccessResponseSchema({
       method,
       returnType,
       returnTypeName: AstIndex.symbolName(returnType),

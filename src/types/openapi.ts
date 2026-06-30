@@ -18,6 +18,19 @@ export interface OpenApiInfo {
 export type OpenApiSecurityScheme = Record<string, unknown>;
 export type OpenApiSecurityRequirement = Record<string, string[]>;
 
+export interface OpenApiMediaType {
+  schema?: OpenApiSchema;
+  example?: unknown;
+  examples?: Record<string, unknown>;
+}
+
+/** A single entry of an operation's `responses` map, keyed by status code. */
+export interface OpenApiResponse {
+  description: string;
+  headers?: Record<string, unknown>;
+  content?: Record<string, OpenApiMediaType>;
+}
+
 /** A Redoc/Scalar tag group — top-level navigation grouping a set of tag names. */
 export interface OpenApiTagGroup {
   name: string;

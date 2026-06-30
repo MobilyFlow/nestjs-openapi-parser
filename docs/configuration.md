@@ -132,13 +132,16 @@ Known limitation: a fragment scope used **only** in `<X>…</X>` blocks — neve
 
 ## Hooks (project-specific glue)
 
-Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Four hooks let you customize:
+Default behavior emits "vanilla NestJS" output: the method return type is the response body, every registered security scheme applies. Five hooks let you customize:
 
 ```ts
 defineConfig({
   // ...
   hooks: {
-    buildResponseSchema: (ctx) => {
+    buildSuccessResponseSchema: (ctx) => {
+      /* ... */
+    },
+    buildResponses: (ctx, responses) => {
       /* ... */
     },
     resolveSecurity: (ctx) => {
@@ -154,12 +157,12 @@ defineConfig({
 });
 ```
 
-### `buildResponseSchema(ctx)`
+### `buildSuccessResponseSchema(ctx)`
 
-Wrap responses in a project-specific envelope (e.g. `{ success, data }`) or special-case wrapper types (e.g. `PaginatedResponse<T>`).
+Wrap the **success** response in a project-specific envelope (e.g. `{ success, data }`) or special-case wrapper types (e.g. `PaginatedResponse<T>`).
 
 ```ts
-buildResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
+buildSuccessResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
   if (returnTypeName === 'PaginatedResponse') {
     return {
       type: 'object',
@@ -180,6 +183,48 @@ buildResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
 ```
 
 `ctx.defaultSchema()` lazily computes the bare return-type schema — calling it registers a `$ref` if the return type is a class. Don't call it if you're replacing the body entirely (otherwise you'll pull schemas you don't reference).
+
+### `buildResponses(ctx, responses)`
+
+Finalize the **full** responses map for an endpoint — typically to document errors (404, 422, 401, …). The hook receives the pre-populated map and returns the final one:
+
+- the success entry (status from `@HttpCode`/the verb default, body from `buildSuccessResponseSchema`), plus
+- one description-only entry per `@Response <code> <description>` JSDoc tag on the method (see below).
+
+Its job is usually to attach `content` (the error body) for those codes, or add blanket errors. Mutating `responses` and returning it is fine; returning `undefined` keeps the pre-populated map.
+
+```ts
+buildResponses: ({ controller, method }, responses) => {
+  const errorBody = {
+    'application/json': { schema: { $ref: '#/components/schemas/ApiError' } },
+  };
+  // Fill a body for every error code the `@Response` tags declared.
+  for (const [code, response] of Object.entries(responses)) {
+    if (Number(code) >= 400 && !response.content) response.content = errorBody;
+  }
+  // Add a blanket 401 to secured endpoints.
+  const isPublic = !!method.getDecorator('Public') || !!controller.getDecorator('Public');
+  if (!isPublic) responses['401'] ??= { description: 'Unauthorized', content: errorBody };
+  return responses;
+};
+```
+
+`ctx` provides `{ controller, method, httpMethod, successStatus, typeToSchema }`. Reference a shared error schema with a literal `$ref` (register it via [`additionalModels`](#additionalmodels) so it lands in `components.schemas`), or build one from a `ts-morph` `Type` with `ctx.typeToSchema(...)`.
+
+**Declaring error codes with `@Response`.** A method-level `@Response <code> <description>` JSDoc tag seeds a response entry (status + description only — no body). Repeat it per code:
+
+```ts
+/**
+ * Fetch a single user by UUID.
+ *
+ * @Response 404 User not found
+ * @Response 422 Validation failed
+ */
+@Get(':id')
+findOne(@Param('id', ParseUUIDPipe) id: string): Promise<User> { /* ... */ }
+```
+
+This works standalone (the codes show up with just a description) or alongside `buildResponses` (which fills in the body). The description is optional — when omitted, the canonical HTTP reason phrase is used (`404` → `Not Found`). A tag naming the computed success code is ignored, since that entry is already seeded.
 
 ### `resolveSecurity(ctx)`
 

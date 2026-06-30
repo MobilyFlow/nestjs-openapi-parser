@@ -16,7 +16,8 @@ import {
 import type {
   NestParserConfig,
   NestParserHooks,
-  ResponseSchemaContext,
+  SuccessResponseSchemaContext,
+  ResponsesContext,
   SecurityContext,
   OpenApiDocument,
   OpenApiSchema,

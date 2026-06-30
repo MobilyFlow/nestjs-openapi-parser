@@ -93,9 +93,11 @@ The file is marked `required`. `FileFieldsInterceptor` (multiple named fields) i
 
 ## Responses
 
-The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize the body with the [`buildResponseSchema`](configuration.md#hooks-project-specific-glue) hook.
+The default is "method return type **is** the response body" with status `201` for `POST` and `200` for everything else. `Promise<T>` is unwrapped to `T` first. Customize the success body with the [`buildSuccessResponseSchema`](configuration.md#hooks-project-specific-glue) hook.
 
 **`@HttpCode(...)` overrides the status.** A handler decorated with `@HttpCode(204)` (numeric literal) or `@HttpCode(HttpStatus.NO_CONTENT)` (the `HttpStatus` member is resolved from a built-in name→code table) uses that code as the response key instead of the 201/200 default — matching NestJS's own behavior.
+
+**Error responses.** Document additional codes with a method-level `@Response <code> <description>` JSDoc tag (repeatable) and/or the [`buildResponses`](configuration.md#hooks-project-specific-glue) hook, which receives the full responses map (success + tag-derived entries) and attaches the error bodies.
 
 ## Media types — `@Accept` / `@ContentType`
 

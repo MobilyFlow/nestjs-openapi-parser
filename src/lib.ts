@@ -10,7 +10,8 @@ export type {
   ProjectConfig,
   ConventionsConfig,
   PagesConfig,
-  ResponseSchemaContext,
+  SuccessResponseSchemaContext,
+  ResponsesContext,
   SecurityContext,
   EndpointSummaryContext,
   ModelConstructor,
@@ -33,4 +34,6 @@ export type {
   OpenApiSecurityScheme,
   OpenApiSecurityRequirement,
   OpenApiTagGroup,
+  OpenApiMediaType,
+  OpenApiResponse,
 } from './types/openapi';

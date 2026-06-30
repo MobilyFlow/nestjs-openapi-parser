@@ -469,6 +469,7 @@ describe('output ordering', () => {
     expect(Object.keys(document.components?.schemas ?? {})).toEqual([
       // `additionalModels` entries are registered before the path walk.
       'MaintenanceWindow',
+      'ApiError',
       'LoginDto',
       'LoginResponseDto',
       'HealthStatusDto',

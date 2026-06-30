@@ -17,9 +17,13 @@ export default defineConfig({
     globalPrefix: 'api',
   },
 
-  // Force-include an orphan `interface` (no endpoint reaches it) via the string
-  // form — the only way to pin a non-class model, which has no constructor.
-  additionalModels: ['src/health/system-status.ts#MaintenanceWindow'],
+  // Force-include orphan models no endpoint reaches: the `MaintenanceWindow`
+  // interface (string form is the only way to pin a non-class model), and the
+  // `ApiError` body referenced by the `buildResponses` hook for error codes.
+  additionalModels: [
+    'src/health/system-status.ts#MaintenanceWindow',
+    'src/common/api-error.ts#ApiError',
+  ],
 
   // Standalone Markdown page rendered ahead of the API reference. `group`/
   // `apiGroup` opt into grouped `x-tagGroups` navigation (omit both for a flat,
@@ -31,8 +35,8 @@ export default defineConfig({
   },
 
   hooks: {
-    // Global response envelope: { success, message, data?, pagination? }.
-    buildResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
+    // Global success-response envelope: { success, message, data?, pagination? }.
+    buildSuccessResponseSchema: ({ returnType, returnTypeName, defaultSchema }) => {
       const isEmpty = returnType.isVoid() || returnType.isUndefined();
       const properties: Record<string, unknown> = {
         success: { type: 'boolean' },
@@ -65,6 +69,21 @@ export default defineConfig({
     resolveSecurity: ({ controller, method }) => {
       const isPublic = !!method.getDecorator('Public') || !!controller.getDecorator('Public');
       return isPublic ? [] : [{ bearerAuth: [] }];
+    },
+
+    // Attach error bodies. `@Response` tags seed status + description; here we
+    // fill in `content` (a $ref to the force-included ApiError) for every error
+    // code, and add a blanket 401 to secured endpoints.
+    buildResponses: ({ controller, method }, responses) => {
+      const errorBody = { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } };
+      for (const [code, response] of Object.entries(responses)) {
+        if (Number(code) >= 400 && !response.content) response.content = errorBody;
+      }
+
+      const isPublic = !!method.getDecorator('Public') || !!controller.getDecorator('Public');
+      if (!isPublic) responses['401'] ??= { description: 'Unauthorized', content: errorBody };
+
+      return responses;
     },
   },
 });

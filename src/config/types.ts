@@ -1,6 +1,7 @@
 import type { ClassDeclaration, MethodDeclaration, Type } from 'ts-morph';
 import type {
   OpenApiInfo,
+  OpenApiResponse,
   OpenApiSchema,
   OpenApiSecurityRequirement,
   OpenApiSecurityScheme,
@@ -8,11 +9,12 @@ import type {
 } from '../types/openapi';
 
 /**
- * Context passed to the `buildResponseSchema` hook for a single controller method.
- * The hook decides what the final response body schema looks like — including any
- * project-specific envelope (e.g. `{ success, data }`) or pagination wrapping.
+ * Context passed to the `buildSuccessResponseSchema` hook for a single controller
+ * method. The hook decides what the success response body schema looks like —
+ * including any project-specific envelope (e.g. `{ success, data }`) or
+ * pagination wrapping.
  */
-export interface ResponseSchemaContext {
+export interface SuccessResponseSchemaContext {
   method: MethodDeclaration;
   /** Method return type with `Promise<T>` already unwrapped to `T`. */
   returnType: Type;
@@ -56,12 +58,43 @@ export interface EndpointSummaryContext {
   defaultSummary: string;
 }
 
+/**
+ * Context passed to the `buildResponses` hook for a single controller method.
+ * The hook receives the pre-populated responses map (success entry plus any
+ * `@Response` tag-derived, description-only error entries) and returns the final
+ * map to emit — typically filling in `content` (error bodies) per status code.
+ */
+export interface ResponsesContext {
+  controller: ClassDeclaration;
+  method: MethodDeclaration;
+  /** Lowercase HTTP verb (`get`, `post`, `put`, `delete`, `patch`). */
+  httpMethod: string;
+  /** The computed success status code (e.g. `'200'`, `'201'`, `'204'`). */
+  successStatus: string;
+  /** Convert any ts-morph `Type` to an OpenAPI schema fragment (registers refs). */
+  typeToSchema: (type: Type) => OpenApiSchema;
+}
+
 export interface NestParserHooks {
   /**
-   * Decide the schema of the response body for an endpoint. If not provided, the
-   * response body is the method's return type schema directly (no envelope).
+   * Decide the schema of the success response body for an endpoint. If not
+   * provided, the response body is the method's return type schema directly (no
+   * envelope).
    */
-  buildResponseSchema?: (ctx: ResponseSchemaContext) => OpenApiSchema;
+  buildSuccessResponseSchema?: (ctx: SuccessResponseSchemaContext) => OpenApiSchema;
+
+  /**
+   * Finalize the full responses map for an endpoint. Receives the pre-populated
+   * map — the success entry plus any `@Response <code> <description>` tag-derived
+   * entries (description only, no `content`) — and returns the responses to
+   * emit. This is where error bodies are attached (e.g. a `$ref` to a shared
+   * error schema), or blanket errors added. Mutating `responses` and returning
+   * it is fine. If not provided, the pre-populated map is used as-is.
+   */
+  buildResponses?: (
+    ctx: ResponsesContext,
+    responses: Record<string, OpenApiResponse>,
+  ) => Record<string, OpenApiResponse>;
 
   /**
    * Decide which security requirements apply to an endpoint. Default behavior:

@@ -30,6 +30,9 @@ export class UsersController {
 
   /**
    * Fetch a single user by UUID.
+   *
+   * @Response 404 User not found
+   * @Response 422 Validation failed
    */
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) _id: string): Promise<User> {
