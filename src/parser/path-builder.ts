@@ -7,11 +7,7 @@ import {
   Type,
 } from 'ts-morph';
 import type { NestParserHooks } from '../config/types';
-import type {
-  OpenApiResponse,
-  OpenApiSchema,
-  OpenApiSecurityRequirement,
-} from '../types/openapi';
+import type { OpenApiResponse, OpenApiSchema, OpenApiSecurityRequirement } from '../types/openapi';
 import { AstIndex } from './ast-index';
 import { SchemaBuilder } from './schema-builder';
 import { filterScopedComments, getScopes, getTags, isVisible } from './tags';

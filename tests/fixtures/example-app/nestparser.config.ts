@@ -75,7 +75,9 @@ export default defineConfig({
     // fill in `content` (a $ref to the force-included ApiError) for every error
     // code, and add a blanket 401 to secured endpoints.
     buildResponses: ({ controller, method }, responses) => {
-      const errorBody = { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } };
+      const errorBody = {
+        'application/json': { schema: { $ref: '#/components/schemas/ApiError' } },
+      };
       for (const [code, response] of Object.entries(responses)) {
         if (Number(code) >= 400 && !response.content) response.content = errorBody;
       }
