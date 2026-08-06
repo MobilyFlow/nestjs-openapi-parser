@@ -262,6 +262,7 @@ export class SchemaBuilder {
     if (type.isString()) return { type: 'string' };
     if (type.isNumber()) return { type: 'number' };
     if (type.isBoolean()) return { type: 'boolean' };
+    if (type.isBooleanLiteral()) return { type: 'boolean' };
 
     const symbolName = AstIndex.symbolName(type);
     if (symbolName === 'Date') return { type: 'string', format: 'date-time' };
@@ -323,6 +324,9 @@ export class SchemaBuilder {
   private unionSchema(type: Type): OpenApiSchema {
     const members = type.getUnionTypes().filter((t) => !t.isUndefined() && !t.isNull());
     if (members.length === 1) return this.schemaForType(members[0]);
+    if (members.length && members.every((t) => t.isBooleanLiteral() || t.isBoolean())) {
+      return { type: 'boolean' };
+    }
     if (members.length && members.every((t) => t.isStringLiteral())) {
       return { type: 'string', enum: members.map((t) => t.getLiteralValue() as string) };
     }
