@@ -1,0 +1,14 @@
+package.json
+  h_c12f6e934b9ef0 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1eaea0e888f5d246c12ea9b1ab309e76eb7bfa7c",
+  "prompts": {},
+  "humans": {
+    "h_c12f6e934b9ef0": {
+      "author": "LaGregance <gregoire.taja@gmail.com>"
+    }
+  }
+}
