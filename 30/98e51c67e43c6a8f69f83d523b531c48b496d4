@@ -1,0 +1,21 @@
+src/parser/path-builder.ts
+  s_6bc1dcee15d212::t_5883519d420609 663-664,666-671
+tests/parser.test.ts
+  s_6bc1dcee15d212::t_bb35070d1a63a5 529-548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3098e51c67e43c6a8f69f83d523b531c48b496d4",
+  "prompts": {},
+  "sessions": {
+    "s_6bc1dcee15d212": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "85da5b7c-8c58-4d7e-90fd-d7a0f3f7ad61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LaGregance <gregoire.taja@gmail.com>"
+    }
+  }
+}
