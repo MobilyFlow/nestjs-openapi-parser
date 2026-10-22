@@ -7,6 +7,7 @@ import {
   InterfaceDeclaration,
   Node,
   Project,
+  SourceFile,
   Type,
   TypeAliasDeclaration,
 } from 'ts-morph';
@@ -31,6 +32,8 @@ export class AstIndex {
   private readonly interfacesMap = new Map<string, InterfaceDeclaration>();
   private readonly typeAliasesMap = new Map<string, TypeAliasDeclaration>();
   private readonly enumsMap = new Map<string, EnumDeclaration>();
+  /** Source files under rootDir that survived the excludeSuffixes filter. */
+  private readonly sourceFiles: SourceFile[] = [];
   private readonly conventions: Required<ConventionsConfig>;
 
   constructor(options: AstIndexOptions) {
@@ -71,6 +74,7 @@ export class AstIndex {
 
       const sourceFile = this.project.getSourceFile(full);
       if (!sourceFile) continue;
+      this.sourceFiles.push(sourceFile);
       for (const clazz of sourceFile.getClasses()) {
         const name = clazz.getName();
         if (name) this.classesMap.set(name, clazz);
@@ -130,6 +134,11 @@ export class AstIndex {
 
   hasEnum(name: string): boolean {
     return this.enumsMap.has(name);
+  }
+
+  /** Indexed source files (under rootDir, excludeSuffixes applied), in traversal order. */
+  getSourceFiles(): SourceFile[] {
+    return this.sourceFiles;
   }
 
   /** All classes decorated with `@Controller(...)`. */

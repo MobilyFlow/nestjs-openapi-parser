@@ -414,57 +414,63 @@ export class SchemaBuilder {
 
     for (const decorator of prop.getDecorators()) {
       const args = decorator.getArguments();
-      const setNum = (key: string, value: number | undefined): void => {
-        if (value !== undefined) schema[key] = value;
+      const setNum = (obj: OpenApiSchema, key: string, value: number | undefined): void => {
+        if (value !== undefined) obj[key] = value;
       };
+
+      // `{ each: true }` validators constrain the array elements, so element-level
+      // keywords (format, pattern, lengths, numeric bounds) land on `items`, while
+      // array-level ones (@ArrayMin/MaxSize) always stay on the array itself.
+      const target =
+        schema.type === 'array' && hasEachOption(args) ? asItemsSchema(schema) : schema;
 
       switch (decorator.getName()) {
         case 'Min':
-          setNum('minimum', literalNumber(args[0]));
+          setNum(target, 'minimum', literalNumber(args[0]));
           break;
         case 'Max':
-          setNum('maximum', literalNumber(args[0]));
+          setNum(target, 'maximum', literalNumber(args[0]));
           break;
         case 'MinLength':
-          setNum('minLength', literalNumber(args[0]));
+          setNum(target, 'minLength', literalNumber(args[0]));
           break;
         case 'MaxLength':
-          setNum('maxLength', literalNumber(args[0]));
+          setNum(target, 'maxLength', literalNumber(args[0]));
           break;
         case 'Length':
-          setNum('minLength', literalNumber(args[0]));
-          setNum('maxLength', literalNumber(args[1]));
+          setNum(target, 'minLength', literalNumber(args[0]));
+          setNum(target, 'maxLength', literalNumber(args[1]));
           break;
         case 'ArrayMinSize':
-          setNum('minItems', literalNumber(args[0]));
+          setNum(schema, 'minItems', literalNumber(args[0]));
           break;
         case 'ArrayMaxSize':
-          setNum('maxItems', literalNumber(args[0]));
+          setNum(schema, 'maxItems', literalNumber(args[0]));
           break;
         case 'IsEmail':
-          schema.format = 'email';
+          target.format = 'email';
           break;
         case 'IsUrl':
-          schema.format = 'uri';
+          target.format = 'uri';
           break;
         case 'IsUUID':
-          schema.format = 'uuid';
+          target.format = 'uuid';
           break;
         case 'IsDateString':
-          schema.format = 'date-time';
+          target.format = 'date-time';
           break;
         case 'IsInt':
-          if (schema.type === 'number') schema.type = 'integer';
+          if (target.type === 'number') target.type = 'integer';
           break;
         case 'IsPositive':
-          schema.exclusiveMinimum = 0;
+          target.exclusiveMinimum = 0;
           break;
         case 'IsNegative':
-          schema.exclusiveMaximum = 0;
+          target.exclusiveMaximum = 0;
           break;
         case 'Matches': {
           const pattern = regexLiteralPattern(args[0]);
-          if (pattern !== undefined) schema.pattern = pattern;
+          if (pattern !== undefined) target.pattern = pattern;
           break;
         }
       }
@@ -523,6 +529,25 @@ function literalNumber(arg: Node | undefined): number | undefined {
     }
   }
   return undefined;
+}
+
+/** True if any decorator argument is an options object literal with `each: true`. */
+function hasEachOption(args: Node[]): boolean {
+  return args.some((arg) => {
+    if (!Node.isObjectLiteralExpression(arg)) return false;
+    const prop = arg.getProperty('each');
+    // Shorthand `{ each }` reads the `each` variable — treat it as truthy.
+    if (Node.isShorthandPropertyAssignment(prop)) return true;
+    return (
+      Node.isPropertyAssignment(prop) && prop.getInitializer()?.getKind() === SyntaxKind.TrueKeyword
+    );
+  });
+}
+
+/** The `items` schema of an array schema, created as an empty object if absent. */
+function asItemsSchema(schema: OpenApiSchema): OpenApiSchema {
+  if (!schema.items || typeof schema.items !== 'object') schema.items = {};
+  return schema.items as OpenApiSchema;
 }
 
 /** The pattern of a `@Matches(...)` argument — a regex literal `/re/flags` or a string. */

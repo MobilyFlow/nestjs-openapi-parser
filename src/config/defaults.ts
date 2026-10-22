@@ -1,6 +1,6 @@
 import type { ConventionsConfig, ProjectConfig } from './types';
 
-export const DEFAULT_PROJECT: Required<Omit<ProjectConfig, 'excludeSuffixes'>> & {
+export const DEFAULT_PROJECT: Required<Omit<ProjectConfig, 'excludeSuffixes' | 'versioning'>> & {
   excludeSuffixes: string[];
 } = {
   tsConfigFilePath: 'tsconfig.json',

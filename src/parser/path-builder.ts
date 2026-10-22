@@ -3,12 +3,14 @@ import {
   Decorator,
   MethodDeclaration,
   Node,
+  ObjectLiteralExpression,
   ParameterDeclaration,
   Type,
 } from 'ts-morph';
 import type { NestParserHooks } from '../config/types';
 import type { OpenApiResponse, OpenApiSchema, OpenApiSecurityRequirement } from '../types/openapi';
 import { AstIndex } from './ast-index';
+import { readVersionValues, type ResolvedVersioning } from './bootstrap';
 import { SchemaBuilder } from './schema-builder';
 import { filterScopedComments, getScopes, getTags, isVisible } from './tags';
 
@@ -18,7 +20,34 @@ const HTTP_METHODS: Record<string, string> = {
   Put: 'put',
   Delete: 'delete',
   Patch: 'patch',
+  Head: 'head',
+  Options: 'options',
+  // @Sse() is an HTTP GET that streams text/event-stream (see SSE_MEDIA_TYPE).
+  Sse: 'get',
 };
+
+// @All() registers a handler for every verb. OpenAPI has no wildcard method, so
+// it expands to one operation per verb (operationIds de-dup, bodies/responses
+// are identical).
+const ALL_METHODS = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
+
+// NestJS v11's `@Sse(path, { [METHOD_METADATA]: RequestMethod.X })` can override
+// the streaming verb (default GET). RequestMethod members (ordinal order, from
+// @nestjs/common) → the OpenAPI verb(s) they emit. ALL fans out like @All();
+// SEARCH has no OpenAPI path-item verb, so it degrades to the GET default.
+// Harmless on v10, where @Sse() takes no options object.
+const REQUEST_METHODS: Record<string, string[]> = {
+  GET: ['get'],
+  POST: ['post'],
+  PUT: ['put'],
+  DELETE: ['delete'],
+  PATCH: ['patch'],
+  ALL: ALL_METHODS,
+  OPTIONS: ['options'],
+  HEAD: ['head'],
+  SEARCH: ['get'],
+};
+const REQUEST_METHOD_ORDER = Object.keys(REQUEST_METHODS);
 
 // Media type used for request bodies and responses unless an endpoint overrides
 // it with `@Accept` (request) or `@ContentType` (response) in its JSDoc.
@@ -27,6 +56,9 @@ const DEFAULT_MEDIA_TYPE = 'application/json';
 // Default request media type for endpoints with a file upload (binary data
 // can't ride in JSON), used unless `@Accept` says otherwise.
 const MULTIPART_MEDIA_TYPE = 'multipart/form-data';
+
+// Response media type for `@Sse()` handlers, unless `@ContentType` overrides it.
+const SSE_MEDIA_TYPE = 'text/event-stream';
 
 // NestJS's `HttpStatus` enum (from `@nestjs/common`) member name → numeric code.
 // Used to resolve `@HttpCode(HttpStatus.NO_CONTENT)` statically, since we can't
@@ -90,8 +122,18 @@ function humanizeMethodName(name: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/**
+ * A resolved version requirement from `@Controller({ version })` or `@Version`.
+ * One entry per version to emit; an empty string is `VERSION_NEUTRAL` (no version
+ * segment). NestJS allows mixing them — `@Version(['1', VERSION_NEUTRAL])` serves
+ * both `/v1/...` and the unversioned route — so this stays a flat list.
+ */
+type VersionSpec = string[];
+
 export interface PathBuilderOptions {
   globalPrefix?: string;
+  /** Resolved URI versioning. Non-URI types are ignored here (they don't affect paths). */
+  versioning?: ResolvedVersioning;
   hooks?: NestParserHooks;
   registeredSchemes?: string[];
   activeScopes?: Set<string>;
@@ -116,6 +158,8 @@ export class PathBuilder {
    */
   private readonly usedTagNames = new Set<string>();
   private readonly globalPrefix: string;
+  /** URI version prefix + default versions, or null when versioning is off or non-URI. */
+  private readonly versioning: ResolvedVersioning | null;
   private readonly hooks: NestParserHooks;
   private readonly registeredSchemes: string[];
   private readonly activeScopes: Set<string>;
@@ -127,6 +171,7 @@ export class PathBuilder {
     options: PathBuilderOptions = {},
   ) {
     this.globalPrefix = options.globalPrefix ?? '';
+    this.versioning = options.versioning?.type === 'uri' ? options.versioning : null;
     this.hooks = options.hooks ?? {};
     this.registeredSchemes = options.registeredSchemes ?? [];
     this.activeScopes = options.activeScopes ?? new Set();
@@ -164,10 +209,11 @@ export class PathBuilder {
   private processController(controller: ClassDeclaration): void {
     if (!isVisible(getScopes(getTags(controller)), this.activeScopes)) return;
 
-    // @Controller and the route decorators each accept `string | string[]`; an
+    // @Controller accepts `string | string[]` or an options object
+    // (`{ path, version }`); the route decorators accept `string | string[]`. An
     // array prefix/path means the handler is mapped to several routes at once.
-    const basePathArgs = this.stringArgs(controller.getDecorator('Controller'), 0);
-    const basePaths = basePathArgs.length ? basePathArgs : [''];
+    const { paths: basePaths, version: controllerVersion } =
+      this.parseControllerDecorator(controller);
     const controllerTagBag = getTags(controller);
     const tag =
       controllerTagBag.Tag?.[0] ?? (this.hooks.controllerTag ?? this.defaultTag)(controller);
@@ -186,37 +232,147 @@ export class PathBuilder {
     for (const method of controller.getInstanceMethods()) {
       if (!isVisible(getScopes(getTags(method)), this.activeScopes)) continue;
 
-      const httpDecorator = method.getDecorators().find((d) => HTTP_METHODS[d.getName()]);
+      const httpDecorator = method
+        .getDecorators()
+        .find((d) => d.getName() === 'All' || HTTP_METHODS[d.getName()]);
       if (!httpDecorator) continue;
 
-      const httpMethod = HTTP_METHODS[httpDecorator.getName()];
+      const decName = httpDecorator.getName();
+      const httpMethods =
+        decName === 'All'
+          ? ALL_METHODS
+          : decName === 'Sse'
+            ? this.sseMethods(httpDecorator)
+            : [HTTP_METHODS[decName]];
       const routeArgs = this.stringArgs(httpDecorator, 0);
       const routePaths = routeArgs.length ? routeArgs : [''];
       const methodTag = getTags(method).Tag?.[0] ?? tag;
+      // A method-level `@Version` overrides the controller's `{ version }` option.
+      const version = this.readMethodVersion(method) ?? controllerVersion;
 
-      // One operation per (controller prefix × route path × optional-param
-      // expansion) combination. Each gets its own operationId (uniqueOperationId
-      // de-dups) and its own path params, since placeholders can differ per path.
-      for (const base of basePaths) {
-        for (const route of routePaths) {
-          const rawPath = this.joinPath(this.globalPrefix, base, route);
-          for (const fullPath of this.expandRoutePaths(rawPath, controller, method)) {
-            this.usedTagNames.add(methodTag);
-            const templateParams = this.pathParamNames(fullPath);
-            const operation = this.buildOperation(
-              controller,
-              method,
-              httpMethod,
-              methodTag,
-              templateParams,
-            );
+      // One operation per (version × controller prefix × route path × optional-
+      // param expansion) combination. Each gets its own operationId
+      // (uniqueOperationId de-dups) and its own path params, since placeholders
+      // can differ per path. A version segment ('' when unversioned/VERSION_NEUTRAL)
+      // sits between the global prefix and the controller base: /api/v1/users.
+      for (const versionSeg of this.versionSegments(version)) {
+        for (const base of basePaths) {
+          for (const route of routePaths) {
+            const rawPath = this.joinPath(this.globalPrefix, versionSeg, base, route);
+            for (const fullPath of this.expandRoutePaths(rawPath, controller, method)) {
+              this.usedTagNames.add(methodTag);
+              const templateParams = this.pathParamNames(fullPath);
+              for (const httpMethod of httpMethods) {
+                const operation = this.buildOperation(
+                  controller,
+                  method,
+                  httpMethod,
+                  methodTag,
+                  templateParams,
+                );
 
-            this.paths[fullPath] ??= {};
-            this.paths[fullPath][httpMethod] = operation;
+                this.paths[fullPath] ??= {};
+                this.paths[fullPath][httpMethod] = operation;
+              }
+            }
           }
         }
       }
     }
+  }
+
+  /**
+   * Parse the `@Controller(...)` decorator. Accepts the positional form
+   * (`@Controller('path')` / `@Controller(['a', 'b'])`) and the options-object
+   * form (`@Controller({ path, version })`). Returns the base route path(s)
+   * (defaulting to `['']` for a root controller) and the controller-level
+   * version, which NestJS carries in the object's `version` field — NOT via a
+   * `@Version` class decorator.
+   */
+  private parseControllerDecorator(controller: ClassDeclaration): {
+    paths: string[];
+    version: VersionSpec | undefined;
+  } {
+    const dec = controller.getDecorator('Controller');
+    const arg = dec?.getArguments()[0];
+
+    if (arg && Node.isObjectLiteralExpression(arg)) {
+      const paths = this.stringLiterals(this.objectProp(arg, 'path'));
+      return {
+        paths: paths.length ? paths : [''],
+        version: this.readVersionSpec(this.objectProp(arg, 'version')),
+      };
+    }
+
+    const paths = this.stringArgs(dec, 0);
+    return { paths: paths.length ? paths : [''], version: undefined };
+  }
+
+  /**
+   * Resolve the verb(s) an `@Sse()` endpoint emits. Defaults to GET; NestJS v11's
+   * options object (`@Sse('x', { [METHOD_METADATA]: RequestMethod.POST })`) can
+   * override it. The key is a computed constant we can't read statically, so we
+   * match on the value — a `RequestMethod.X` member access or its numeric
+   * ordinal — and ignore everything else.
+   */
+  private sseMethods(decorator: Decorator): string[] {
+    const opts = decorator.getArguments()[1];
+    if (!opts || !Node.isObjectLiteralExpression(opts)) return ['get'];
+
+    for (const prop of opts.getProperties()) {
+      if (!Node.isPropertyAssignment(prop)) continue;
+
+      const init = prop.getInitializer();
+
+      if (Node.isPropertyAccessExpression(init)) {
+        const verbs = REQUEST_METHODS[init.getName()];
+        if (verbs) return verbs;
+      } else if (Node.isNumericLiteral(init)) {
+        const member = REQUEST_METHOD_ORDER[init.getLiteralValue()];
+        if (member) return REQUEST_METHODS[member];
+      }
+    }
+    return ['get'];
+  }
+
+  /** Read a method-level `@Version(...)` decorator, or undefined when absent. */
+  private readMethodVersion(method: MethodDeclaration): VersionSpec | undefined {
+    const dec = method.getDecorator('Version');
+    if (!dec) return undefined;
+    return this.readVersionSpec(dec.getArguments()[0]);
+  }
+
+  /**
+   * Version URI segments to emit for a route — one operation per segment. Empty
+   * string means "no version segment" (versioning off, `VERSION_NEUTRAL`, or no
+   * version and no `defaultVersion`). Each version becomes `${prefix}${version}`
+   * (e.g. `v1`).
+   */
+  private versionSegments(version: VersionSpec | undefined): string[] {
+    if (!this.versioning) return [''];
+
+    const versions = version ?? this.versioning.defaultVersion;
+    if (versions.length === 0) return [''];
+
+    // '' (VERSION_NEUTRAL) stays an empty segment; everything else gets the prefix.
+    return [...new Set(versions.map((v) => (v === '' ? '' : `${this.versioning!.prefix}${v}`)))];
+  }
+
+  /**
+   * Interpret a version argument — a string, `VERSION_NEUTRAL`, or an array
+   * mixing both — into the version list (`''` = neutral). Returns undefined when
+   * absent; a present-but-dynamic argument falls back to neutral (best-effort).
+   */
+  private readVersionSpec(node: Node | undefined): VersionSpec | undefined {
+    if (!node) return undefined;
+    const versions = readVersionValues(node);
+    return versions.length ? versions : [''];
+  }
+
+  /** Initializer of a named property in an object literal, or undefined. */
+  private objectProp(obj: ObjectLiteralExpression, name: string): Node | undefined {
+    const prop = obj.getProperty(name);
+    return prop && Node.isPropertyAssignment(prop) ? prop.getInitializer() : undefined;
   }
 
   private buildOperation(
@@ -237,7 +393,9 @@ export class PathBuilder {
     // `@Accept <type>` overrides the request body media type; `@ContentType
     // <type>` overrides the response media type. Both default to JSON.
     const methodTags = getTags(method);
-    const responseMediaType = methodTags.ContentType?.[0] || DEFAULT_MEDIA_TYPE;
+    const responseMediaType =
+      methodTags.ContentType?.[0] ||
+      (method.getDecorator('Sse') ? SSE_MEDIA_TYPE : DEFAULT_MEDIA_TYPE);
 
     const rawDesc = method.getJsDocs()[0]?.getCommentText();
     const desc = rawDesc
@@ -461,7 +619,10 @@ export class PathBuilder {
     mediaType: string,
   ): Record<string, OpenApiResponse> {
     let returnType = method.getReturnType();
-    if (AstIndex.symbolName(returnType) === 'Promise') {
+    // Unwrap the async carriers NestJS serializes through: a Promise, or the
+    // Observable an @Sse()/streaming handler returns (Observable<MessageEvent>).
+    const carrier = AstIndex.symbolName(returnType);
+    if (carrier === 'Promise' || carrier === 'Observable') {
       const args = returnType.getTypeArguments();
       if (args.length) returnType = args[0];
     }
@@ -484,15 +645,33 @@ export class PathBuilder {
       if (parsed) responses[parsed.code] ??= { description: parsed.description };
     }
 
-    if (!this.hooks.buildResponses) return responses;
-    const ctx = {
-      controller,
-      method,
-      httpMethod,
-      successStatus: status,
-      typeToSchema: (t: Type) => this.schemaBuilder.typeToSchema(t),
-    };
-    return this.hooks.buildResponses(ctx, responses) ?? responses;
+    const finalized = this.hooks.buildResponses
+      ? (this.hooks.buildResponses(
+          {
+            controller,
+            method,
+            httpMethod,
+            successStatus: status,
+            typeToSchema: (t: Type) => this.schemaBuilder.typeToSchema(t),
+          },
+          responses,
+        ) ?? responses)
+      : responses;
+
+    // A HEAD response never carries a message body (RFC 9110 §9.3.2), so drop
+    // the content a return type or the envelope hook would otherwise attach.
+    // Copy rather than `delete` in place: the hook may hand back response
+    // objects it shares across operations (e.g. a module-level `UNAUTHORIZED`).
+    if (httpMethod === 'head') {
+      return Object.fromEntries(
+        Object.entries(finalized).map(([code, { content: _content, ...bodyless }]) => [
+          code,
+          bodyless,
+        ]),
+      );
+    }
+
+    return finalized;
   }
 
   /**
@@ -541,6 +720,9 @@ export class PathBuilder {
         if (code !== undefined) return String(code);
       }
     }
+    // SSE streams respond 200 regardless of verb (the 201-for-POST default only
+    // makes sense for a created resource, not a long-lived event stream).
+    if (method.getDecorator('Sse')) return '200';
     return httpMethod === 'post' ? '201' : '200';
   }
 
@@ -604,14 +786,21 @@ export class PathBuilder {
    * Non-string and dynamic entries are skipped; the result is empty when absent.
    */
   private stringArgs(decorator: Decorator | undefined, index: number): string[] {
-    if (!decorator) return [];
-    const arg = decorator.getArguments()[index];
-    if (!arg) return [];
+    return this.stringLiterals(decorator?.getArguments()[index]);
+  }
+
+  /**
+   * Distinct string values from a node that is a string literal or an array of
+   * string literals (`'a'` or `['a', 'b']`). Non-string/dynamic entries are
+   * skipped; empty when the node is absent or neither form.
+   */
+  private stringLiterals(node: Node | undefined): string[] {
+    if (!node) return [];
     let values: string[] = [];
-    if (Node.isStringLiteral(arg)) {
-      values = [arg.getLiteralValue()];
-    } else if (Node.isArrayLiteralExpression(arg)) {
-      values = arg
+    if (Node.isStringLiteral(node)) {
+      values = [node.getLiteralValue()];
+    } else if (Node.isArrayLiteralExpression(node)) {
+      values = node
         .getElements()
         .filter(Node.isStringLiteral)
         .map((el) => el.getLiteralValue());

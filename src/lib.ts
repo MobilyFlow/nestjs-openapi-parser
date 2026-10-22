@@ -8,6 +8,7 @@ export type {
   NestParserHooks,
   OpenApiConfig,
   ProjectConfig,
+  VersioningConfig,
   ConventionsConfig,
   PagesConfig,
   SuccessResponseSchemaContext,

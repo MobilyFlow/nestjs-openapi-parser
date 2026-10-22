@@ -1,9 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ModelConstructor, NestParserConfig, PagesConfig } from '../config/types';
+import type {
+  ModelConstructor,
+  NestParserConfig,
+  PagesConfig,
+  VersioningConfig,
+} from '../config/types';
 import type { OpenApiDocument, OpenApiSecurityScheme, OpenApiTagGroup } from '../types/openapi';
 import { validateDocument } from '../validate';
 import { AstIndex } from './ast-index';
+import { detectBootstrap, normalizeVersioning, type ResolvedVersioning } from './bootstrap';
 import { PathBuilder } from './path-builder';
 import { SchemaBuilder } from './schema-builder';
 import { getScopes, getTags, isVisible } from './tags';
@@ -65,8 +71,23 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
   const securitySchemes = definedSecuritySchemes(config.openapi.securitySchemes);
   const registeredSchemes = Object.keys(securitySchemes);
 
+  // Global prefix and versioning: an explicit config field always wins; a
+  // missing one is auto-detected from the project's bootstrap file.
+  const detected = detectBootstrap(index.getSourceFiles());
+  const globalPrefix = config.project?.globalPrefix ?? detected.globalPrefix;
+  const versioning = resolveVersioning(config.project?.versioning, detected.versioning);
+
+  // TODO: support HEADER and MEDIA-TYPE versioning in the path builder, so that the generated OpenAPI document reflects the actual route URLs.
+  if (versioning && versioning.type !== 'uri') {
+    console.warn(
+      `[nestparser] ${versioning.type} versioning doesn't change route URLs, so it is ` +
+        `not reflected in the generated paths. Only URI versioning affects paths.`,
+    );
+  }
+
   const pathBuilder = new PathBuilder(index, schemaBuilder, {
-    globalPrefix: config.project?.globalPrefix,
+    globalPrefix,
+    versioning,
     hooks: config.hooks,
     registeredSchemes,
     activeScopes,
@@ -113,6 +134,20 @@ export async function parseNestProject(options: ParseNestProjectOptions): Promis
   }
 
   return document;
+}
+
+/**
+ * Resolve the effective versioning: an explicit config object wins, `false`
+ * disables detection, and `undefined` falls back to what was detected from the
+ * bootstrap file.
+ */
+function resolveVersioning(
+  configured: VersioningConfig | false | undefined,
+  detected: ResolvedVersioning | undefined,
+): ResolvedVersioning | undefined {
+  if (configured === false) return undefined;
+  if (configured) return normalizeVersioning(configured);
+  return detected;
 }
 
 function formatScopes(scopes: Set<string>): string {

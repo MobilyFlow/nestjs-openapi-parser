@@ -145,14 +145,39 @@ export interface ProjectConfig {
   rootDir?: string;
   /**
    * Global route prefix mirroring `app.setGlobalPrefix(...)`. Prepended to every
-   * controller route. Defaults to empty (no prefix).
+   * controller route. When omitted, it is auto-detected from the project's
+   * bootstrap file (`app.setGlobalPrefix('...')`); set it explicitly to override
+   * detection, or to `''` to force no prefix.
    */
   globalPrefix?: string;
+  /**
+   * API versioning mirroring `app.enableVersioning(...)`. When omitted, it is
+   * auto-detected from the bootstrap file; set it explicitly to override, or to
+   * `false` to disable detection. Only URI versioning changes the emitted paths
+   * (a `${prefix}${version}` segment after the global prefix); header, media-type
+   * and custom versioning don't alter the URL and are left out of the paths.
+   */
+  versioning?: VersioningConfig | false;
   /**
    * Glob-ish suffixes to skip when scanning the source tree. Files matching any
    * of these are not indexed. Defaults to `['.spec.ts', '.test.ts', '.d.ts']`.
    */
   excludeSuffixes?: string[];
+}
+
+export interface VersioningConfig {
+  /**
+   * Versioning strategy. Only `'uri'` affects the emitted paths. Defaults to
+   * `'uri'` (matching `enableVersioning()` with no options).
+   */
+  type?: 'uri' | 'header' | 'media-type' | 'custom';
+  /** URI version prefix. Defaults to `'v'`. Set to `''` for no prefix. */
+  prefix?: string;
+  /**
+   * Version applied to controllers/routes without an explicit `@Version(...)`.
+   * Mirrors `defaultVersion`. A route tagged `VERSION_NEUTRAL` stays unversioned.
+   */
+  defaultVersion?: string | string[];
 }
 
 export interface ConventionsConfig {

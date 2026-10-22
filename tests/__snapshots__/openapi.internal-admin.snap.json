@@ -224,6 +224,373 @@
         "security": []
       }
     },
+    "/api/health/stream": {
+      "get": {
+        "operationId": "SystemHealth_stream",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Stream",
+        "description": "Live uptime stream over Server-Sent Events.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HeartbeatEvent"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/health/stream-post": {
+      "post": {
+        "operationId": "SystemHealth_streamPost",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Stream Post",
+        "description": "SSE stream whose verb is overridden to POST (NestJS v11 option).",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HeartbeatEvent"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/health/ping": {
+      "head": {
+        "operationId": "SystemHealth_ping",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Ping",
+        "description": "Cheap liveness check with no body.",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/health/probe": {
+      "options": {
+        "operationId": "SystemHealth_probe",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Probe",
+        "description": "CORS preflight / capability probe.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/health/echo": {
+      "get": {
+        "operationId": "SystemHealth_echo",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HealthStatusDto"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "post": {
+        "operationId": "SystemHealth_echo_2",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HealthStatusDto"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "put": {
+        "operationId": "SystemHealth_echo_3",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HealthStatusDto"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "delete": {
+        "operationId": "SystemHealth_echo_4",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HealthStatusDto"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "patch": {
+        "operationId": "SystemHealth_echo_5",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HealthStatusDto"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "options": {
+        "operationId": "SystemHealth_echo_6",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/HealthStatusDto"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "head": {
+        "operationId": "SystemHealth_echo_7",
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Echo",
+        "description": "Catch-all echo handler, registered for every verb.",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "security": []
+      }
+    },
     "/api/posts": {
       "get": {
         "operationId": "Posts_list",
@@ -1013,6 +1380,26 @@
         ],
         "description": "A `type` alias over an object literal — references an interface, a `Date`, an\noptional field and an anonymous inline object."
       },
+      "HeartbeatEvent": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "uptimeSeconds": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "uptimeSeconds"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "description": "A single heartbeat pushed over the SSE stream."
+      },
       "CreatePostDto": {
         "type": "object",
         "properties": {
@@ -1033,6 +1420,15 @@
               "DRAFT",
               "PUBLISHED"
             ]
+          },
+          "tagIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 20,
+            "description": "Up to 20 tag ids to attach."
           }
         },
         "required": [

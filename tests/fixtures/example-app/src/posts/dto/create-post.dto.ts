@@ -1,4 +1,12 @@
-import { IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MinLength,
+} from 'class-validator';
 import { PostStatus } from '../../enums/post-status';
 
 export class CreatePostDto {
@@ -15,4 +23,11 @@ export class CreatePostDto {
   @IsOptional()
   @IsEnum(PostStatus)
   status?: PostStatus;
+
+  /** Up to 20 tag ids to attach. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsUUID('all', { each: true })
+  tagIds?: string[];
 }

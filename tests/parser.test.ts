@@ -454,6 +454,11 @@ describe('output ordering', () => {
       '/api/health',
       '/api/health/status',
       '/api/health/summary',
+      '/api/health/stream',
+      '/api/health/stream-post',
+      '/api/health/ping',
+      '/api/health/probe',
+      '/api/health/echo',
       '/api/posts',
       '/api/users',
       '/api/users/{id}',
@@ -475,6 +480,7 @@ describe('output ordering', () => {
       'HealthStatusDto',
       'SystemStatus',
       'StatusSummary',
+      'HeartbeatEvent',
       'CreatePostDto',
       'BlogPost',
       'User',
@@ -483,6 +489,61 @@ describe('output ordering', () => {
       // Registered transitively while `SystemStatus` is built, so it lands last.
       'ServiceHealth',
     ]);
+  });
+
+  it('maps @Sse/@Head/@Options verbs and expands @All to every verb', async () => {
+    const document = await buildFixtureDocument();
+    // @Sse() → GET streaming text/event-stream.
+    const stream = document.paths['/api/health/stream'] as Record<
+      string,
+      { responses: Record<string, { content?: Record<string, unknown> }> }
+    >;
+    expect(Object.keys(stream)).toEqual(['get']);
+    expect(Object.keys(stream.get.responses['200'].content ?? {})).toEqual(['text/event-stream']);
+    // NestJS v11 `{ [METHOD_METADATA]: RequestMethod.POST }` overrides the verb,
+    // but an SSE stream still responds 200 (not POST's 201) under text/event-stream.
+    const streamPost = document.paths['/api/health/stream-post'] as Record<
+      string,
+      { responses: Record<string, { content?: Record<string, unknown> }> }
+    >;
+    expect(Object.keys(streamPost)).toEqual(['post']);
+    expect(Object.keys(streamPost.post.responses)).toEqual(['200']);
+    expect(Object.keys(streamPost.post.responses['200'].content ?? {})).toEqual([
+      'text/event-stream',
+    ]);
+    // @Head / @Options map to their own path-item verbs.
+    expect(Object.keys(document.paths['/api/health/ping'])).toEqual(['head']);
+    expect(Object.keys(document.paths['/api/health/probe'])).toEqual(['options']);
+    // @All() fans out to one operation per verb.
+    expect(Object.keys(document.paths['/api/health/echo'])).toEqual([
+      'get',
+      'post',
+      'put',
+      'delete',
+      'patch',
+      'options',
+      'head',
+    ]);
+  });
+
+  it('strips HEAD bodies without mutating response objects the hook shares', async () => {
+    // A config reusing one module-level response object across every endpoint.
+    const unauthorized = {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: { type: 'object' } } },
+    };
+    const document = await buildFixtureDocument({
+      hooks: {
+        ...(await loadFixtureConfig()).hooks,
+        buildResponses: (_ctx, responses) => ({ ...responses, '401': unauthorized }),
+      },
+    });
+    type Op = { responses: Record<string, { content?: unknown }> };
+    const echo = document.paths['/api/health/echo'] as Record<string, Op>;
+
+    expect(echo.head.responses['401'].content).toBeUndefined();
+    expect(echo.get.responses['401'].content).toBeDefined();
+    expect(unauthorized.content).toBeDefined();
   });
 
   it('keeps model fields in their source-declaration order', async () => {

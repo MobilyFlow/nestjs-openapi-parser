@@ -23,7 +23,8 @@ export default defineConfig({
   project: {
     tsConfigFilePath: 'tsconfig.json',
     rootDir: 'src',
-    globalPrefix: 'v1',
+    globalPrefix: 'api', // auto-detected from main.ts if omitted — see "Routing"
+    versioning: { type: 'uri', prefix: 'v', defaultVersion: '1' }, // see "Routing"
     excludeSuffixes: ['.spec.ts', '.test.ts', '.d.ts'],
   },
 
@@ -41,6 +42,31 @@ export default defineConfig({
   },
 });
 ```
+
+## Routing — global prefix & versioning
+
+Both the global prefix and URI versioning are **auto-detected** from the project's bootstrap file (usually `main.ts`) by static analysis — no app boot. The detector reads:
+
+- `app.setGlobalPrefix('api')` → `project.globalPrefix`
+- `app.enableVersioning({ type: VersioningType.URI, prefix: 'v', defaultVersion: '1' })` → `project.versioning`
+
+An explicit config field always wins over detection. Set `globalPrefix: ''` to force no prefix, or `versioning: false` to disable versioning entirely. Detection is best-effort: if a call's argument isn't a string/object literal (e.g. it comes from an env var), it's skipped with a warning — set the field explicitly in that case. Only the first call of each kind counts (the file calling `NestFactory.create` is read first), so an unreadable call in `main.ts` never falls back to a call in another file. Inside a literal `enableVersioning({ ... })`, a dynamic `type` skips versioning entirely (the strategy decides whether paths change), while a dynamic `prefix` / `defaultVersion` entry or a spread only falls back to the default for that field — each with a warning.
+
+### Versioning
+
+Only **URI** versioning changes the emitted paths. The version segment (`${prefix}${version}`) sits between the global prefix and the controller route:
+
+```text
+@Controller({ path: 'users', version: '1' })  →  GET /api/v1/users
+```
+
+- **Controller-level** version comes from the options object: `@Controller({ path, version })`. (NestJS has no class-level `@Version` decorator.)
+- **Method-level** `@Version(...)` overrides the controller's version.
+- `version` / `@Version(['1', '2'])` emits one path per version.
+- `VERSION_NEUTRAL` (as the controller `version` or `@Version(VERSION_NEUTRAL)`) leaves the route unversioned (no segment).
+- A route with no version uses `defaultVersion` (unversioned if none is set).
+
+Header, media-type and custom versioning don't alter the URL, so they're detected but left out of the paths (with a warning).
 
 ## Markdown pages — `pages`
 
